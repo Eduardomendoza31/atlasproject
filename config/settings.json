@@ -3,6 +3,14 @@
     "conversational": {
       "provider": "google",
       "model": "gemini/gemini-3.5-flash-lite"
+    },
+    "memory_cortex": {
+      "provider": "google",
+      "model": "gemini/gemini-3.5-flash-lite"
+    },
+    "embeddings": {
+      "provider": "google",
+      "model": "gemini/gemini-embedding-001"
     }
   }
 }
