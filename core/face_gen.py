@@ -146,7 +146,6 @@ def _paint_gap(
     shape = np.sin(np.pi * t) ** 0.7
     upper_ys = center_y - upper_amt * shape
     lower_ys = center_y + lower_amt * shape
-    teeth_ys = upper_ys + 0.32 * (lower_ys - upper_ys)
 
     def _poly(top_ys: np.ndarray, bottom_ys: np.ndarray) -> np.ndarray:
         top_pts = np.stack([xs, top_ys], axis=1)
@@ -163,30 +162,7 @@ def _paint_gap(
         return (fill.astype(np.float32) * mask3 + base.astype(np.float32) * (1 - mask3))
 
     out = _blend(img, _poly(upper_ys, lower_ys), (22, 20, 24), 5)  # BGR: cavidad oscura neutra
-    out = out.astype(np.uint8)
-
-    # Dientes individuales, no una franja solida: se dibujan como bloques
-    # separados por huecos reales (color de cavidad), sin blur. Una raya
-    # divisoria fina de un solo pixel desaparece al reescalar la imagen
-    # al tamano final del sprite en la UI (~0.2x) - un hueco con ancho de
-    # verdad sobrevive esa reduccion.
-    n_teeth = 6
-    gap_frac = 0.16
-    for i in range(n_teeth):
-        f0 = i / n_teeth + gap_frac / (2 * n_teeth)
-        f1 = (i + 1) / n_teeth - gap_frac / (2 * n_teeth)
-        top0, top1 = np.interp([f0, f1], t, upper_ys)
-        bot0, bot1 = np.interp([f0, f1], t, teeth_ys)
-        if min(bot0 - top0, bot1 - top1) < 2:
-            continue
-        x0 = left_x + (right_x - left_x) * f0
-        x1 = left_x + (right_x - left_x) * f1
-        tooth_poly = np.array(
-            [[x0, top0], [x1, top1], [x1, bot1], [x0, bot0]], dtype=np.int32
-        )
-        cv2.fillConvexPoly(out, tooth_poly, (200, 206, 214))  # BGR: dientes
-
-    return out
+    return out.astype(np.uint8)
 
 
 def _paint_lid_line(img: np.ndarray, left_x: float, right_x: float, y: float) -> np.ndarray:
