@@ -1,408 +1,208 @@
-const chatEl = document.getElementById("chat");
-const form = document.getElementById("composer");
-const input = document.getElementById("input");
-const micButton = document.getElementById("mic-button");
-const stopButton = document.getElementById("stop-button");
-const faceBaseEl = document.getElementById("face-base");
-const faceMouthEl = document.getElementById("face-mouth");
-const faceEyeLeftEl = document.getElementById("face-eye-left");
-const faceEyeRightEl = document.getElementById("face-eye-right");
+// Orquestador de la interfaz nueva (Fase 6): sidebar, tabs, tarjetas
+// flotantes, panel derecho, barra de accesos rapidos, modo voz. No sabe
+// nada de websockets - reacciona a los eventos "atlas:state"/"atlas:tool"
+// que dispara chat.js, y para actuar usa las mismas funciones que ya
+// expone chat.js (sendMessage/input/form), nunca toca face.js.
 
-let ws = null;
-let atlasBubble = null;
-let typingBubble = null;
+const statusDot = document.getElementById("status-dot");
+const statusText = document.getElementById("status-text");
+const voicePanel = document.getElementById("voice-panel");
+const cardsLeft = document.getElementById("cards-left");
+const cardsRight = document.getElementById("cards-right");
+const activityListEl = document.getElementById("activity-list");
+const planListEl = document.getElementById("plan-list");
+const agentsListEl = document.getElementById("agents-list");
 
-// --- Rostro animado: superpone una boca recortada sobre la foto base y la
-// cambia de forma segun el volumen del audio que se esta reproduciendo
-// (no hay timing real de visemas de edge-tts, asi que se aproxima por
-// amplitud: silencio -> cerrada, volumen medio -> semi-abierta, fuerte ->
-// abierta).
-const manifest = window.FACE_MANIFEST;
-let audioCtx = null;
-let analyser = null;
-
-function positionOverlay(el, bbox) {
-  el.style.left = `${(bbox.x / manifest.base_size.w) * 100}%`;
-  el.style.top = `${(bbox.y / manifest.base_size.h) * 100}%`;
-  el.style.width = `${(bbox.w / manifest.base_size.w) * 100}%`;
-  el.style.height = `${(bbox.h / manifest.base_size.h) * 100}%`;
-  el.style.display = "block";
-}
-
-if (manifest) {
-  faceBaseEl.src = manifest.base_image;
-
-  faceMouthEl.src = manifest.mouth_shapes.closed;
-  positionOverlay(faceMouthEl, manifest.mouth_bbox);
-
-  faceEyeLeftEl.src = manifest.eyes.left.shapes.open;
-  positionOverlay(faceEyeLeftEl, manifest.eyes.left.bbox);
-  faceEyeRightEl.src = manifest.eyes.right.shapes.open;
-  positionOverlay(faceEyeRightEl, manifest.eyes.right.bbox);
-
-  scheduleBlink();
-}
-
-// --- Parpadeo: independiente del audio, en intervalos aleatorios para
-// que no se vea como un metronomo.
-function blinkOnce() {
-  faceEyeLeftEl.src = manifest.eyes.left.shapes.closed;
-  faceEyeRightEl.src = manifest.eyes.right.shapes.closed;
-  setTimeout(() => {
-    faceEyeLeftEl.src = manifest.eyes.left.shapes.open;
-    faceEyeRightEl.src = manifest.eyes.right.shapes.open;
-  }, 140);
-}
-
-function scheduleBlink() {
-  const delay = 2500 + Math.random() * 3500;
-  setTimeout(() => {
-    blinkOnce();
-    scheduleBlink();
-  }, delay);
-}
-
-const MOUTH_RMS_HALF_OPEN = 0.02;
-const MOUTH_RMS_OPEN = 0.06;
-
-function setMouthShape(shape) {
-  if (!manifest || faceMouthEl.dataset.shape === shape) return;
-  faceMouthEl.dataset.shape = shape;
-  faceMouthEl.src = manifest.mouth_shapes[shape];
-}
-
-function getAnalyser() {
-  if (!audioCtx) {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    analyser = audioCtx.createAnalyser();
-    analyser.fftSize = 512;
-    analyser.connect(audioCtx.destination);
-  }
-  return analyser;
-}
-
-function playWithLipSync(audio) {
-  if (!manifest) {
-    audio.play().catch(() => {});
-    return;
-  }
-  try {
-    const activeAnalyser = getAnalyser();
-    const source = audioCtx.createMediaElementSource(audio);
-    source.connect(activeAnalyser);
-    const samples = new Uint8Array(activeAnalyser.fftSize);
-    let rafId = null;
-
-    const tick = () => {
-      activeAnalyser.getByteTimeDomainData(samples);
-      let sumSquares = 0;
-      for (let i = 0; i < samples.length; i++) {
-        const v = (samples[i] - 128) / 128;
-        sumSquares += v * v;
-      }
-      const rms = Math.sqrt(sumSquares / samples.length);
-      if (rms > MOUTH_RMS_OPEN) setMouthShape("open");
-      else if (rms > MOUTH_RMS_HALF_OPEN) setMouthShape("half_open");
-      else setMouthShape("closed");
-      rafId = requestAnimationFrame(tick);
-    };
-
-    audio.addEventListener("play", () => {
-      rafId = requestAnimationFrame(tick);
-    });
-    audio.addEventListener("ended", () => {
-      cancelAnimationFrame(rafId);
-      setMouthShape("closed");
-    });
-    audio.play().catch(() => {});
-  } catch (err) {
-    audio.play().catch(() => {});
-  }
-}
-
-function addMessage(text, who) {
-  const div = document.createElement("div");
-  div.className = `msg ${who}`;
-  div.textContent = text;
-  chatEl.appendChild(div);
-  chatEl.scrollTop = chatEl.scrollHeight;
-  return div;
-}
-
-function clearTyping() {
-  if (typingBubble) {
-    typingBubble.remove();
-    typingBubble = null;
-  }
-}
-
-// --- Herramientas: aviso/confirmacion/resultado, y el boton de Detener.
-// Mismos niveles de riesgo que core/tools.py (duplicado a proposito -
-// son 4 strings constantes, no vale la pena un endpoint solo para esto).
-const TOOL_TIERS = {
-  read_file: "safe",
-  list_directory: "safe",
-  write_file: "sensitive",
-  run_command: "critical",
-  web_search: "safe",
+const STATE_LABELS = {
+  listo: "Listo para ayudarte",
+  escuchando: "Escuchando…",
+  procesando: "Procesando…",
+  ejecutando: "Ejecutando tarea…",
+  autorizacion: "Necesito tu autorización",
+  hablando: "Hablando…",
+  desconectado: "Reconectando…",
 };
-const TIER_EMOJI = { safe: "🟢", sensitive: "🟡", critical: "🔴" };
 
-let turnInFlight = false;
-let pendingConfirmId = null;
-
-function setTurnInFlight(inFlight) {
-  turnInFlight = inFlight;
-  stopButton.disabled = !inFlight;
-}
-
-function setComposerEnabled(enabled) {
-  input.disabled = !enabled;
-  form.querySelector('button[type="submit"]').disabled = !enabled;
-  micButton.disabled = !enabled;
-}
-
-function addConfirmBubble({ id, name, tier, description }) {
-  setComposerEnabled(false);
-  pendingConfirmId = id;
-  const div = document.createElement("div");
-  div.className = `msg atlas confirm confirm-${tier}`;
-  const tierLabel = tier === "critical" ? "🔴 Acción crítica" : "🟡 Confirmación requerida";
-
-  const label = document.createElement("div");
-  label.className = "confirm-label";
-  label.textContent = tierLabel;
-
-  const desc = document.createElement("div");
-  desc.className = "confirm-desc";
-  desc.textContent = description;
-
-  const actions = document.createElement("div");
-  actions.className = "confirm-actions";
-  const approveBtn = document.createElement("button");
-  approveBtn.type = "button";
-  approveBtn.className = "confirm-approve";
-  approveBtn.textContent = "Permitir";
-  const denyBtn = document.createElement("button");
-  denyBtn.type = "button";
-  denyBtn.className = "confirm-deny";
-  denyBtn.textContent = "Denegar";
-  actions.appendChild(approveBtn);
-  actions.appendChild(denyBtn);
-
-  div.appendChild(label);
-  div.appendChild(desc);
-  div.appendChild(actions);
-  chatEl.appendChild(div);
-  chatEl.scrollTop = chatEl.scrollHeight;
-
-  approveBtn.addEventListener("click", () => resolveConfirm(id, true, div));
-  denyBtn.addEventListener("click", () => resolveConfirm(id, false, div));
-}
-
-function resolveConfirm(id, approved, bubbleEl) {
-  sendMessage({ type: "tool_confirm_response", id, approved });
-  bubbleEl.querySelector(".confirm-actions").remove();
-  bubbleEl.classList.add(approved ? "confirm-resolved-yes" : "confirm-resolved-no");
-  if (pendingConfirmId === id) {
-    pendingConfirmId = null;
-    setComposerEnabled(true);
-  }
-}
-
-function connect() {
-  ws = new WebSocket("ws://127.0.0.1:8731/ws/chat");
-
-  ws.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-    if (data.type === "transcript") {
-      addMessage(data.text, "user");
-      typingBubble = addMessage("escribiendo…", "atlas typing");
-      setTurnInFlight(true);
-    } else if (data.type === "chunk") {
-      clearTyping();
-      if (!atlasBubble) {
-        atlasBubble = addMessage("", "atlas");
-      }
-      atlasBubble.textContent += data.text;
-      chatEl.scrollTop = chatEl.scrollHeight;
-    } else if (data.type === "done") {
-      atlasBubble = null;
-      setTurnInFlight(false);
-    } else if (data.type === "error") {
-      clearTyping();
-      atlasBubble = null;
-      setTurnInFlight(false);
-      addMessage(`⚠️ ${data.text}`, "atlas");
-    } else if (data.type === "audio_reply") {
-      const audio = new Audio(`data:audio/mpeg;base64,${data.data}`);
-      playWithLipSync(audio);
-    } else if (data.type === "tool_call") {
-      clearTyping();
-      const tier = TOOL_TIERS[data.name] || "safe";
-      addMessage(
-        `${TIER_EMOJI[tier]} Atlas usa: ${data.name}(${JSON.stringify(data.arguments)})`,
-        "atlas tool-call"
-      );
-    } else if (data.type === "tool_confirm_request") {
-      clearTyping();
-      addConfirmBubble(data);
-    } else if (data.type === "tool_result") {
-      const label = data.denied ? "denegado" : "resultado";
-      addMessage(`${data.name} — ${label}: ${data.result}`, "atlas tool-result");
-    } else if (data.type === "stopped") {
-      clearTyping();
-      atlasBubble = null;
-      setTurnInFlight(false);
-      if (pendingConfirmId) {
-        pendingConfirmId = null;
-        setComposerEnabled(true);
-      }
-      addMessage("⏹ Turno detenido.", "atlas");
-    }
-  };
-
-  ws.onclose = () => {
-    setTimeout(connect, 1000);
-  };
-}
-
-connect();
-
-function sendMessage(payload) {
-  if (!ws || ws.readyState !== WebSocket.OPEN) {
-    addMessage("⚠️ Sin conexión con Atlas, reintentando...", "atlas");
-    return false;
-  }
-  ws.send(JSON.stringify(payload));
-  return true;
-}
-
-form.addEventListener("submit", (e) => {
-  e.preventDefault();
-  const text = input.value.trim();
-  if (!text) return;
-  if (!sendMessage({ type: "text", text })) return;
-  addMessage(text, "user");
-  input.value = "";
-  typingBubble = addMessage("escribiendo…", "atlas typing");
-  setTurnInFlight(true);
+window.addEventListener("atlas:state", (e) => {
+  const { state } = e.detail;
+  statusText.textContent = STATE_LABELS[state] || state;
+  statusDot.className = `status-dot status-${state}`;
+  document.body.dataset.atlasState = state;
+  voicePanel.hidden = state !== "escuchando";
 });
 
-stopButton.addEventListener("click", () => {
-  sendMessage({ type: "stop" });
-});
-
-// MediaRecorder.stop() tumba el proceso completo en este Chromium
-// embebido (bug de la version de QtWebEngine, no del codec). Se evita
-// por completo: se captura PCM crudo con Web Audio API y se arma un
-// WAV a mano en JS.
-let isRecording = false;
-let audioContext = null;
-let sourceNode = null;
-let processorNode = null;
-let micStream = null;
-let pcmChunks = [];
-
-async function startRecording() {
-  micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-  audioContext = new AudioContext();
-  sourceNode = audioContext.createMediaStreamSource(micStream);
-  processorNode = audioContext.createScriptProcessor(4096, 1, 1);
-  pcmChunks = [];
-
-  processorNode.onaudioprocess = (e) => {
-    pcmChunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
-  };
-
-  // Chrome exige que el ScriptProcessorNode este conectado a un destino
-  // para disparar onaudioprocess - se enruta a un gain en 0 para no
-  // producir eco por los parlantes.
-  const silentGain = audioContext.createGain();
-  silentGain.gain.value = 0;
-  sourceNode.connect(processorNode);
-  processorNode.connect(silentGain);
-  silentGain.connect(audioContext.destination);
-
-  isRecording = true;
-  micButton.classList.add("recording");
+// --- Tarjetas flotantes: rellenan/enfocan el campo de comando, nunca lo
+// mandan solas (salvo el cambio de modo) - Atlas no debe "hacer algo"
+// sin que el usuario haya dicho que, especificamente.
+function primeInput(text) {
+  input.value = text;
+  input.focus();
+  input.setSelectionRange(text.length, text.length);
 }
 
-function encodeWav(samples, sampleRate) {
-  const buffer = new ArrayBuffer(44 + samples.length * 2);
-  const view = new DataView(buffer);
+const CARD_SETS = {
+  general: [
+    { icon: "🔎", label: "Investigar", run: () => primeInput("Investiga sobre ") },
+    { icon: "📁", label: "Organizar archivos", run: () => primeInput("Ayúdame a organizar la carpeta ") },
+    { icon: "💻", label: "Programar", run: () => renderCards("code") },
+    { icon: "📄", label: "Crear documento", run: () => primeInput("Crea un archivo con ") },
+    { icon: "🌐", label: "Buscar en internet", run: () => primeInput("Busca en internet ") },
+  ],
+  code: [
+    { icon: "🔍", label: "Analizar código", run: () => primeInput("Lee y analiza el archivo ") },
+    { icon: "🐛", label: "Buscar errores", run: () => primeInput("Ejecuta y revisa si hay errores en ") },
+    { icon: "🔧", label: "Corregir", run: () => primeInput("Corrige el problema en ") },
+    { icon: "▶", label: "Ejecutar", run: () => primeInput("Ejecuta el comando ") },
+    { icon: "←", label: "Volver", run: () => renderCards("general") },
+  ],
+};
 
-  const writeString = (offset, text) => {
-    for (let i = 0; i < text.length; i++) {
-      view.setUint8(offset + i, text.charCodeAt(i));
-    }
-  };
-
-  writeString(0, "RIFF");
-  view.setUint32(4, 36 + samples.length * 2, true);
-  writeString(8, "WAVE");
-  writeString(12, "fmt ");
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, 1, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * 2, true);
-  view.setUint16(32, 2, true);
-  view.setUint16(34, 16, true);
-  writeString(36, "data");
-  view.setUint32(40, samples.length * 2, true);
-
-  let offset = 44;
-  for (let i = 0; i < samples.length; i++, offset += 2) {
-    const s = Math.max(-1, Math.min(1, samples[i]));
-    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
-  }
-
-  return new Blob([view], { type: "audio/wav" });
-}
-
-function stopRecording() {
-  isRecording = false;
-  micButton.classList.remove("recording");
-
-  processorNode.disconnect();
-  sourceNode.disconnect();
-  micStream.getTracks().forEach((track) => track.stop());
-  audioContext.close();
-
-  const totalLength = pcmChunks.reduce((sum, chunk) => sum + chunk.length, 0);
-  const merged = new Float32Array(totalLength);
-  let offset = 0;
-  for (const chunk of pcmChunks) {
-    merged.set(chunk, offset);
-    offset += chunk.length;
-  }
-
-  const wavBlob = encodeWav(merged, audioContext.sampleRate);
-
-  blobToBase64(wavBlob).then((base64) => {
-    sendMessage({ type: "audio", data: base64 });
+function renderCards(setName) {
+  const cards = CARD_SETS[setName];
+  cardsLeft.innerHTML = "";
+  cardsRight.innerHTML = "";
+  cards.forEach((card, i) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "action-card";
+    btn.style.animationDelay = `${i * 0.05}s`;
+    btn.innerHTML = `<span class="icon">${card.icon}</span><span>${card.label}</span>`;
+    btn.addEventListener("click", card.run);
+    (i % 2 === 0 ? cardsLeft : cardsRight).appendChild(btn);
   });
 }
 
-function blobToBase64(blob) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result.split(",")[1]);
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
+renderCards("general");
+
+// --- Barra de accesos rapidos: mandan una instruccion en lenguaje
+// natural, Atlas decide usar run_command (y el usuario confirma, como
+// con cualquier herramienta critica) - no se salta el flujo existente.
+const QUICK_PROMPTS = {
+  explorer: "Abre el explorador de archivos de Windows.",
+  terminal: "Abre una ventana de PowerShell.",
+  browser: "Abre mi navegador de internet predeterminado.",
+  notes: "Abre el Bloc de notas.",
+};
+
+function sendQuickPrompt(text) {
+  if (turnInFlight) return;
+  input.value = text;
+  form.requestSubmit();
 }
 
-micButton.addEventListener("click", async () => {
-  if (isRecording) {
-    stopRecording();
+document.getElementById("quick-bar").addEventListener("click", (e) => {
+  const btn = e.target.closest(".quick-btn");
+  if (!btn) return;
+  const prompt = QUICK_PROMPTS[btn.dataset.quick];
+  if (prompt) sendQuickPrompt(prompt);
+});
+
+// --- Tabs de modo (Chat / Visual) ---
+document.getElementById("mode-tabs").addEventListener("click", (e) => {
+  const tab = e.target.closest(".mode-tab");
+  if (!tab) return;
+  document.querySelectorAll(".mode-tab").forEach((t) => t.classList.remove("active"));
+  tab.classList.add("active");
+  document.body.classList.toggle("mode-visual", tab.dataset.viewMode === "visual");
+});
+
+// --- Sidebar: "Inicio" es la vista real; el resto son honestos (o
+// atajos a algo que si existe) hasta que tengan backend propio.
+function flashPanel(titleText) {
+  const panel = Array.from(document.querySelectorAll(".panel")).find(
+    (p) => p.querySelector("h3")?.textContent.trim() === titleText
+  );
+  if (!panel) return;
+  panel.scrollIntoView({ behavior: "smooth", block: "center" });
+  panel.style.borderColor = "var(--accent)";
+  setTimeout(() => { panel.style.borderColor = ""; }, 900);
+}
+
+const NAV_ACTIONS = {
+  proyectos: () => addMessage("📁 Proyectos todavía no está construido.", "atlas"),
+  skills: () => flashPanel("Skills"),
+  automatizaciones: () => flashPanel("Automatizaciones"),
+  archivos: () => sendQuickPrompt(QUICK_PROMPTS.explorer),
+  memoria: () => flashPanel("Memoria"),
+  herramientas: () => addMessage(
+    "🛠 Herramientas disponibles: leer archivos, listar carpetas, escribir archivos, ejecutar comandos de PowerShell, y buscar en internet.",
+    "atlas"
+  ),
+};
+
+document.getElementById("sidebar-nav").addEventListener("click", (e) => {
+  const item = e.target.closest(".nav-item");
+  if (!item) return;
+  document.querySelectorAll(".nav-item").forEach((n) => n.classList.remove("active"));
+  item.classList.add("active");
+  const action = NAV_ACTIONS[item.dataset.nav];
+  if (action) action();
+});
+
+// --- Actividad reciente + plan del turno + "agentes activos" honesto,
+// todo derivado de las mismas herramientas reales que ya corren.
+const ACTIVITY_MAX = 20;
+let activeToolLabel = null;
+
+function addActivityEntry(text) {
+  const empty = activityListEl.querySelector(".activity-empty");
+  if (empty) empty.remove();
+  const li = document.createElement("li");
+  li.textContent = text;
+  activityListEl.prepend(li);
+  while (activityListEl.children.length > ACTIVITY_MAX) {
+    activityListEl.removeChild(activityListEl.lastChild);
+  }
+}
+
+function setAgentActivity(label) {
+  activeToolLabel = label;
+  if (!label) {
+    agentsListEl.innerHTML = '<div class="agents-empty">Sin actividad</div>';
     return;
   }
-  try {
-    await startRecording();
-  } catch (err) {
-    addMessage(`⚠️ No pude acceder al micrófono: ${err.message}`, "atlas");
+  agentsListEl.innerHTML = `
+    <div class="agent-item"><span class="agent-dot"></span><span>${label}</span></div>
+  `;
+}
+
+function clearPlan() {
+  planListEl.innerHTML = '<li class="plan-empty">Sin pasos todavía.</li>';
+}
+
+const planSteps = new Map();
+
+function addPlanStep(id, name) {
+  const empty = planListEl.querySelector(".plan-empty");
+  if (empty) empty.remove();
+  const li = document.createElement("li");
+  li.textContent = `→ ${name}`;
+  planListEl.appendChild(li);
+  planSteps.set(id, li);
+}
+
+function completePlanStep(id, denied) {
+  const li = planSteps.get(id);
+  if (!li) return;
+  li.classList.add(denied ? "denied" : "done");
+  li.textContent = (denied ? "✗ " : "✓ ") + li.textContent.replace(/^[→✓✗]\s*/, "");
+}
+
+// Un envio nuevo (texto o accion rapida) empieza un turno nuevo: el plan
+// de la pantalla es del turno actual, no un historial acumulado.
+form.addEventListener("submit", () => clearPlan(), true);
+
+window.addEventListener("atlas:tool", (e) => {
+  const d = e.detail;
+  if (d.phase === "call") {
+    addActivityEntry(`🔧 ${d.name}`);
+    addPlanStep(d.id, d.name);
+    setAgentActivity(`Atlas — usando ${d.name}`);
+  } else if (d.phase === "confirm") {
+    addActivityEntry(`⏳ ${d.name} — esperando autorización`);
+  } else if (d.phase === "result") {
+    addActivityEntry(`${d.denied ? "❌" : "✅"} ${d.name}`);
+    completePlanStep(d.id, d.denied);
+    setAgentActivity(null);
   }
 });

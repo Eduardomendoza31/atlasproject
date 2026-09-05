@@ -4,22 +4,128 @@
 <meta charset="UTF-8">
 <title>Atlas</title>
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="theme.css">
 </head>
 <body>
-  <div id="face-wrap">
-    <img id="face-base" alt="Atlas">
-    <img id="face-eye-left" alt="">
-    <img id="face-eye-right" alt="">
-    <img id="face-mouth" alt="">
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark">◎</span>
+        <div class="brand-text">
+          <strong>ATLAS</strong>
+          <small>AI ASSISTANT</small>
+        </div>
+      </div>
+
+      <nav class="nav" id="sidebar-nav">
+        <button type="button" class="nav-item active" data-nav="inicio">🏠 <span class="label">Inicio</span></button>
+        <button type="button" class="nav-item" data-nav="proyectos">📁 <span class="label">Proyectos</span></button>
+        <button type="button" class="nav-item" data-nav="skills">🧩 <span class="label">Skills</span></button>
+        <button type="button" class="nav-item" data-nav="automatizaciones">⚙ <span class="label">Automatizaciones</span></button>
+        <button type="button" class="nav-item" data-nav="archivos">🗂 <span class="label">Archivos</span></button>
+        <button type="button" class="nav-item" data-nav="memoria">🧠 <span class="label">Memoria</span></button>
+        <button type="button" class="nav-item" data-nav="herramientas">🛠 <span class="label">Herramientas</span></button>
+      </nav>
+
+      <div class="sidebar-section">
+        <div class="sidebar-section-title">ACTIVIDAD</div>
+        <div id="agents-list" class="agents-list">
+          <div class="agents-empty">Sin actividad</div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="stage">
+      <header class="stage-header">
+        <div class="status-pill">
+          <span id="status-dot" class="status-dot"></span>
+          <div>
+            <div class="status-title">ATLAS</div>
+            <div id="status-text" class="status-text">Conectando…</div>
+          </div>
+        </div>
+
+        <nav class="mode-tabs" id="mode-tabs">
+          <button type="button" class="mode-tab active" data-view-mode="chat">Chat</button>
+          <button type="button" class="mode-tab" data-view-mode="visual">Visual</button>
+        </nav>
+
+        <button type="button" id="stop-button" title="Detener a Atlas" disabled>🛑 Detener</button>
+      </header>
+
+      <div class="stage-center">
+        <div class="card-rail card-rail-left" id="cards-left"></div>
+
+        <div class="face-stage">
+          <div class="face-halo"></div>
+          <div id="face-wrap">
+            <img id="face-base" alt="Atlas">
+            <img id="face-eye-left" alt="">
+            <img id="face-eye-right" alt="">
+            <img id="face-mouth" alt="">
+          </div>
+        </div>
+
+        <div class="card-rail card-rail-right" id="cards-right"></div>
+      </div>
+
+      <div class="voice-panel" id="voice-panel" hidden>
+        <div class="voice-wave"><span></span><span></span><span></span><span></span><span></span></div>
+        <div class="voice-label">Atlas está escuchando…</div>
+      </div>
+
+      <form id="composer">
+        <span class="command-at">@Atlas</span>
+        <button type="button" id="mic-button" title="Hablar">🎤</button>
+        <input id="input" type="text" placeholder="Escribe o habla lo que necesitas..." autocomplete="off" autofocus>
+        <button type="submit" title="Enviar">➤</button>
+      </form>
+
+      <div id="chat"></div>
+
+      <div class="quick-bar" id="quick-bar">
+        <button type="button" class="quick-btn" data-quick="explorer">📁 Explorador</button>
+        <button type="button" class="quick-btn" data-quick="terminal">💻 Terminal</button>
+        <button type="button" class="quick-btn" data-quick="browser">🌐 Navegador</button>
+        <button type="button" class="quick-btn" data-quick="notes">📝 Notas</button>
+      </div>
+    </main>
+
+    <aside class="right-panel">
+      <section class="panel">
+        <h3>Actividad reciente</h3>
+        <ul id="activity-list" class="activity-list">
+          <li class="activity-empty">Sin actividad todavía.</li>
+        </ul>
+      </section>
+
+      <section class="panel">
+        <h3>Plan del turno actual</h3>
+        <ol id="plan-list" class="plan-list">
+          <li class="plan-empty">Sin pasos todavía.</li>
+        </ol>
+      </section>
+
+      <section class="panel">
+        <h3>Memoria</h3>
+        <div class="panel-empty">Próximamente: navegador de memoria.</div>
+      </section>
+
+      <section class="panel">
+        <h3>Skills</h3>
+        <div class="panel-empty">No hay skills instaladas todavía.</div>
+      </section>
+
+      <section class="panel">
+        <h3>Automatizaciones</h3>
+        <div class="panel-empty">Próximamente.</div>
+      </section>
+    </aside>
   </div>
-  <div id="chat"></div>
-  <form id="composer">
-    <button type="button" id="mic-button" title="Hablar">🎤</button>
-    <input id="input" type="text" placeholder="Escribe un mensaje a Atlas..." autocomplete="off" autofocus>
-    <button type="button" id="stop-button" title="Detener" disabled>⏹</button>
-    <button type="submit">Enviar</button>
-  </form>
+
   <script src="assets/face/manifest.js"></script>
+  <script src="face.js"></script>
+  <script src="chat.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
