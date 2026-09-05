@@ -386,7 +386,11 @@ button {
   width: 320px;
   height: 320px;
   border-radius: 50%;
-  background: radial-gradient(circle, var(--accent-soft) 0%, transparent 70%);
+  /* En reposo, sin color propio: el fondo debe leerse exactamente igual
+     que el resto de la pagina (mismo #05060c), no como una mancha violeta
+     detras del rostro. Solo toma color cuando Atlas esta activo (reglas
+     de abajo), como señal de estado real, no como decoracion fija. */
+  background: transparent;
   filter: blur(2px);
   animation: halo-breathe 4s ease-in-out infinite;
   pointer-events: none;
