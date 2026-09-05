@@ -205,34 +205,44 @@ def _paint_lid_line(img: np.ndarray, left_x: float, right_x: float, y: float) ->
 
 
 def _shift_plate_down(crop: np.ndarray, warped: np.ndarray, plate_y: int, shift_px: int) -> np.ndarray:
-    """Desliza en bloque (sin deformarla) la placa mecanica del menton
-    hacia abajo, tomando los pixeles originales sin warp - para simular
-    la caida de mandibula sin alabear su geometria rigida (bordes
-    rectos, tornillos). Deformar esa zona con el mismo TPS de los labios
-    (como se hizo antes) la distorsionaba de forma inestable y se notaba
-    como una linea/artefacto en el cuello, sobre todo con la boca bien
-    abierta."""
+    """Baja la placa/menton con un remap suave, sin deformar su
+    geometria rigida (bordes rectos, tornillos) y sin cortar de borde a
+    borde del recorte.
+
+    Primera version: desplazaba TODO el ancho del recorte por igual (un
+    corte recto). Pero las placas metalicas de los lados de la cara
+    siguen MAS ALLA del recorte, sin moverse - la costura entre "adentro
+    del recorte, desplazado" y "afuera, quieto" se notaba como una linea
+    que descontinuaba esas lineas del diseño justo en el borde del
+    recorte. Ahora el desplazamiento se atenua horizontalmente hasta
+    CERO exactamente en los bordes del recorte (para calzar con el
+    mundo de afuera, que no se mueve) y es maximo en el centro, donde
+    esta el menton; verticalmente se activa de forma gradual alrededor
+    de PLATE_SEAM_FRAC en vez de un corte duro."""
     h, w = crop.shape[:2]
     plate_y = max(1, min(plate_y, h - 1))
-    shift_px = max(0, min(shift_px, h - plate_y - 1))
     if shift_px <= 0:
         return warped
 
-    out = warped.copy()
-    out[plate_y + shift_px :, :] = crop[plate_y : h - shift_px, :]
+    ramp = 14
+    y_top = max(0, plate_y - ramp)
+    y_bottom = min(h, plate_y + ramp)
 
-    # El hueco que deja el desplazamiento se rellena ESTIRANDO (no
-    # repitiendo) una ventana de pixeles originales alrededor de la
-    # costura - repetir una sola fila deja un salto duro de textura
-    # justo donde empieza/termina el relleno.
-    window = 4
-    y0 = max(0, plate_y - window)
-    y1 = min(h, plate_y + window)
-    stretched = cv2.resize(
-        crop[y0:y1, :], (w, (y1 - y0) + shift_px), interpolation=cv2.INTER_LINEAR
+    x_weight = np.sin(np.linspace(0.0, np.pi, w, dtype=np.float32))  # 0 en los bordes, 1 en el centro
+    y_ramp = np.clip((np.arange(h, dtype=np.float32) - y_top) / max(y_bottom - y_top, 1), 0.0, 1.0)
+    y_ramp = y_ramp * y_ramp * (3 - 2 * y_ramp)  # smoothstep, sin quiebre en los extremos
+
+    dy = shift_px * y_ramp[:, None] * x_weight[None, :]
+    map_x, map_y = np.meshgrid(
+        np.arange(w, dtype=np.float32), np.arange(h, dtype=np.float32)
     )
-    out[y0 : y0 + stretched.shape[0], :] = stretched
-    return out
+    shifted = cv2.remap(
+        crop, map_x, map_y - dy, interpolation=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE
+    )
+
+    alpha = y_ramp[:, None, None]
+    blended = warped.astype(np.float32) * (1 - alpha) + shifted.astype(np.float32) * alpha
+    return blended.astype(np.uint8)
 
 
 def _tps_warp(crop: np.ndarray, src: np.ndarray, dst: np.ndarray) -> np.ndarray:
