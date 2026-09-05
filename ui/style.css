@@ -67,3 +67,14 @@ button {
   color: white;
   cursor: pointer;
 }
+
+#mic-button {
+  padding: 10px 14px;
+  background: #eef0fb;
+  color: #1a1a2e;
+}
+
+#mic-button.recording {
+  background: #e0483e;
+  color: white;
+}

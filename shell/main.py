@@ -1,10 +1,17 @@
+import multiprocessing
+import os
 import sys
 import threading
 from pathlib import Path
 
+# Evita el crash clasico de Windows cuando dos librerias nativas (Qt y
+# ctranslate2, en este caso) cargan cada una su propio runtime OpenMP en
+# el mismo proceso ("OMP Error #15: duplicate libiomp5md.dll").
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+
 import uvicorn
 from PyQt6.QtCore import QUrl
-from PyQt6.QtWebEngineCore import QWebEnginePage
+from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEnginePermission
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import QApplication
 
@@ -12,6 +19,19 @@ from PyQt6.QtWidgets import QApplication
 class DebugPage(QWebEnginePage):
     def javaScriptConsoleMessage(self, level, message, line, source):
         print(f"[JS console] {source}:{line} — {message}", flush=True)
+
+    def renderProcessTerminated(self, status, exit_code):
+        print(f"[RENDERER MURIO] status={status} exit_code={exit_code}", flush=True)
+
+
+def _handle_permission_request(permission: QWebEnginePermission) -> None:
+    if permission.permissionType() in (
+        QWebEnginePermission.PermissionType.MediaAudioCapture,
+        QWebEnginePermission.PermissionType.MediaAudioVideoCapture,
+    ):
+        permission.grant()
+    else:
+        permission.deny()
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -31,7 +51,9 @@ def main():
 
     app = QApplication(sys.argv)
     window = QWebEngineView()
-    window.setPage(DebugPage(window))
+    page = DebugPage(window)
+    page.permissionRequested.connect(_handle_permission_request)
+    window.setPage(page)
     window.setWindowTitle("Atlas")
     window.resize(900, 700)
     window.load(QUrl.fromLocalFile(str(ROOT / "ui" / "index.html")))
@@ -40,4 +62,5 @@ def main():
 
 
 if __name__ == "__main__":
+    multiprocessing.freeze_support()
     main()

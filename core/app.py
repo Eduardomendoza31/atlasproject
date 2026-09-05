@@ -1,9 +1,11 @@
 import asyncio
+import base64
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 from core.config import USER_NAME
 from core.providers import stream_reply
+from core.voice import synthesize, transcribe
 from memory.cortex import maybe_save, relevant_context
 
 app = FastAPI(title="Atlas Core")
@@ -51,7 +53,23 @@ async def chat(websocket: WebSocket):
     history: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
     try:
         while True:
-            user_text = await websocket.receive_text()
+            incoming = await websocket.receive_json()
+
+            if incoming["type"] == "audio":
+                audio_bytes = base64.b64decode(incoming["data"])
+                try:
+                    user_text = await transcribe(audio_bytes, suffix=".wav")
+                except Exception as exc:
+                    await websocket.send_json(
+                        {"type": "error", "text": f"No pude transcribir el audio: {exc}"}
+                    )
+                    continue
+                if not user_text:
+                    continue
+                await websocket.send_json({"type": "transcript", "text": user_text})
+            else:
+                user_text = incoming["text"]
+
             history.append({"role": "user", "content": user_text})
 
             context = await relevant_context(user_text)
@@ -77,5 +95,16 @@ async def chat(websocket: WebSocket):
             history.append({"role": "assistant", "content": reply})
             await websocket.send_json({"type": "done"})
             _save_to_memory_in_background(user_text, reply)
+
+            try:
+                audio_reply = await synthesize(reply)
+                await websocket.send_json(
+                    {
+                        "type": "audio_reply",
+                        "data": base64.b64encode(audio_reply).decode("ascii"),
+                    }
+                )
+            except Exception as exc:
+                print(f"[Voz] Fallo al generar audio: {exc}", flush=True)
     except WebSocketDisconnect:
         pass
