@@ -11,6 +11,7 @@ os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
 import uvicorn
 from PyQt6.QtCore import QUrl
+from PyQt6.QtGui import QIcon
 from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEnginePermission
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import QApplication
@@ -47,13 +48,28 @@ def run_server():
 
 
 def main():
+    if sys.platform == "win32":
+        # Sin esto, Windows agrupa la ventana bajo el icono generico de
+        # python.exe en la barra de tareas en vez del icono propio de la
+        # app, sin importar que la ventana/el QApplication ya tengan su
+        # icono seteado - es el identificador que Windows usa para saber
+        # que esta app es "distinta" de cualquier otro script de Python.
+        import ctypes
+        try:
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("eduardo.atlas.asistente")
+        except Exception:
+            pass
+
     threading.Thread(target=run_server, daemon=True).start()
 
     app = QApplication(sys.argv)
+    icon = QIcon(str(ROOT / "img" / "atlas_icon.ico"))
+    app.setWindowIcon(icon)  # necesario ademas del de la ventana para que la barra de tareas de Windows lo muestre
     window = QWebEngineView()
     page = DebugPage(window)
     page.permissionRequested.connect(_handle_permission_request)
     window.setPage(page)
+    window.setWindowIcon(icon)
     window.setWindowTitle("Atlas")
     window.resize(900, 700)
     window.load(QUrl.fromLocalFile(str(ROOT / "ui" / "index.html")))
