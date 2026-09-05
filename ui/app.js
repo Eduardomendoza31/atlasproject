@@ -1,8 +1,9 @@
-// Orquestador de la interfaz nueva (Fase 6): sidebar, tabs, tarjetas
-// flotantes, panel derecho, barra de accesos rapidos, modo voz. No sabe
-// nada de websockets - reacciona a los eventos "atlas:state"/"atlas:tool"
-// que dispara chat.js, y para actuar usa las mismas funciones que ya
-// expone chat.js (sendMessage/input/form), nunca toca face.js.
+// Orquestador de la interfaz nueva (Fase 6): sidebar, tarjetas flotantes,
+// panel derecho, barra de accesos rapidos, modo voz, modo inmersivo. No
+// sabe nada de websockets - reacciona a los eventos "atlas:state"/
+// "atlas:tool" que dispara chat.js, y para actuar usa las mismas
+// funciones que ya expone chat.js (sendMessage/input/form), nunca toca
+// face.js. Los iconos vienen de icons.js (Phosphor, SVG en linea).
 
 const statusDot = document.getElementById("status-dot");
 const statusText = document.getElementById("status-text");
@@ -12,6 +13,8 @@ const cardsRight = document.getElementById("cards-right");
 const activityListEl = document.getElementById("activity-list");
 const planListEl = document.getElementById("plan-list");
 const agentsListEl = document.getElementById("agents-list");
+const quickBarEl = document.getElementById("quick-bar");
+const immersiveButton = document.getElementById("immersive-button");
 
 const STATE_LABELS = {
   listo: "Listo para ayudarte",
@@ -42,18 +45,18 @@ function primeInput(text) {
 
 const CARD_SETS = {
   general: [
-    { icon: "🔎", label: "Investigar", run: () => primeInput("Investiga sobre ") },
-    { icon: "📁", label: "Organizar archivos", run: () => primeInput("Ayúdame a organizar la carpeta ") },
-    { icon: "💻", label: "Programar", run: () => renderCards("code") },
-    { icon: "📄", label: "Crear documento", run: () => primeInput("Crea un archivo con ") },
-    { icon: "🌐", label: "Buscar en internet", run: () => primeInput("Busca en internet ") },
+    { icon: "magnifying-glass", label: "Investigar", run: () => primeInput("Investiga sobre ") },
+    { icon: "folder-simple", label: "Organizar archivos", run: () => primeInput("Ayúdame a organizar la carpeta ") },
+    { icon: "code", label: "Programar", run: () => renderCards("code") },
+    { icon: "file-text", label: "Crear documento", run: () => primeInput("Crea un archivo con ") },
+    { icon: "globe", label: "Buscar en internet", run: () => primeInput("Busca en internet ") },
   ],
   code: [
-    { icon: "🔍", label: "Analizar código", run: () => primeInput("Lee y analiza el archivo ") },
-    { icon: "🐛", label: "Buscar errores", run: () => primeInput("Ejecuta y revisa si hay errores en ") },
-    { icon: "🔧", label: "Corregir", run: () => primeInput("Corrige el problema en ") },
-    { icon: "▶", label: "Ejecutar", run: () => primeInput("Ejecuta el comando ") },
-    { icon: "←", label: "Volver", run: () => renderCards("general") },
+    { icon: "magnifying-glass", label: "Analizar código", run: () => primeInput("Lee y analiza el archivo ") },
+    { icon: "bug", label: "Buscar errores", run: () => primeInput("Ejecuta y revisa si hay errores en ") },
+    { icon: "wrench", label: "Corregir", run: () => primeInput("Corrige el problema en ") },
+    { icon: "play", label: "Ejecutar", run: () => primeInput("Ejecuta el comando ") },
+    { icon: "arrow-left", label: "Volver", run: () => renderCards("general") },
   ],
 };
 
@@ -66,7 +69,7 @@ function renderCards(setName) {
     btn.type = "button";
     btn.className = "action-card";
     btn.style.animationDelay = `${i * 0.05}s`;
-    btn.innerHTML = `<span class="icon">${card.icon}</span><span>${card.label}</span>`;
+    btn.innerHTML = `<span class="icon">${icon(card.icon)}</span><span>${card.label}</span>`;
     btn.addEventListener("click", card.run);
     (i % 2 === 0 ? cardsLeft : cardsRight).appendChild(btn);
   });
@@ -77,12 +80,12 @@ renderCards("general");
 // --- Barra de accesos rapidos: mandan una instruccion en lenguaje
 // natural, Atlas decide usar run_command (y el usuario confirma, como
 // con cualquier herramienta critica) - no se salta el flujo existente.
-const QUICK_PROMPTS = {
-  explorer: "Abre el explorador de archivos de Windows.",
-  terminal: "Abre una ventana de PowerShell.",
-  browser: "Abre mi navegador de internet predeterminado.",
-  notes: "Abre el Bloc de notas.",
-};
+const QUICK_ACTIONS = [
+  { key: "explorer", icon: "folder-simple", label: "Explorador", prompt: "Abre el explorador de archivos de Windows." },
+  { key: "terminal", icon: "terminal-window", label: "Terminal", prompt: "Abre una ventana de PowerShell." },
+  { key: "browser", icon: "compass", label: "Navegador", prompt: "Abre mi navegador de internet predeterminado." },
+  { key: "notes", icon: "note", label: "Notas", prompt: "Abre el Bloc de notas." },
+];
 
 function sendQuickPrompt(text) {
   if (turnInFlight) return;
@@ -90,20 +93,23 @@ function sendQuickPrompt(text) {
   form.requestSubmit();
 }
 
-document.getElementById("quick-bar").addEventListener("click", (e) => {
-  const btn = e.target.closest(".quick-btn");
-  if (!btn) return;
-  const prompt = QUICK_PROMPTS[btn.dataset.quick];
-  if (prompt) sendQuickPrompt(prompt);
+QUICK_ACTIONS.forEach((qa) => {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "quick-btn";
+  btn.title = qa.label;
+  btn.innerHTML = `${icon(qa.icon)}<span class="quick-label">${qa.label}</span>`;
+  btn.addEventListener("click", () => sendQuickPrompt(qa.prompt));
+  quickBarEl.appendChild(btn);
 });
 
-// --- Tabs de modo (Chat / Visual) ---
-document.getElementById("mode-tabs").addEventListener("click", (e) => {
-  const tab = e.target.closest(".mode-tab");
-  if (!tab) return;
-  document.querySelectorAll(".mode-tab").forEach((t) => t.classList.remove("active"));
-  tab.classList.add("active");
-  document.body.classList.toggle("mode-visual", tab.dataset.viewMode === "visual");
+// --- Modo inmersivo: oculta sidebar/panel/tarjetas para dejar solo el
+// rostro y el comando, para cuando se quiere la pantalla mas despejada
+// posible (util en modo voz o simplemente para mirar a Atlas).
+immersiveButton.addEventListener("click", () => {
+  const active = document.body.classList.toggle("mode-visual");
+  immersiveButton.classList.toggle("active", active);
+  immersiveButton.title = active ? "Salir del modo inmersivo" : "Modo inmersivo (solo rostro)";
 });
 
 // --- Sidebar: "Inicio" es la vista real; el resto son honestos (o
@@ -114,18 +120,18 @@ function flashPanel(titleText) {
   );
   if (!panel) return;
   panel.scrollIntoView({ behavior: "smooth", block: "center" });
-  panel.style.borderColor = "var(--accent)";
-  setTimeout(() => { panel.style.borderColor = ""; }, 900);
+  panel.classList.add("panel-flash");
+  setTimeout(() => panel.classList.remove("panel-flash"), 900);
 }
 
 const NAV_ACTIONS = {
-  proyectos: () => addMessage("📁 Proyectos todavía no está construido.", "atlas"),
+  proyectos: () => addMessage("Proyectos todavía no está construido.", "atlas"),
   skills: () => flashPanel("Skills"),
   automatizaciones: () => flashPanel("Automatizaciones"),
-  archivos: () => sendQuickPrompt(QUICK_PROMPTS.explorer),
+  archivos: () => sendQuickPrompt(QUICK_ACTIONS.find((q) => q.key === "explorer").prompt),
   memoria: () => flashPanel("Memoria"),
   herramientas: () => addMessage(
-    "🛠 Herramientas disponibles: leer archivos, listar carpetas, escribir archivos, ejecutar comandos de PowerShell, y buscar en internet.",
+    "Herramientas disponibles: leer archivos, listar carpetas, escribir archivos, ejecutar comandos de PowerShell, y buscar en internet.",
     "atlas"
   ),
 };
@@ -142,13 +148,13 @@ document.getElementById("sidebar-nav").addEventListener("click", (e) => {
 // --- Actividad reciente + plan del turno + "agentes activos" honesto,
 // todo derivado de las mismas herramientas reales que ya corren.
 const ACTIVITY_MAX = 20;
-let activeToolLabel = null;
 
-function addActivityEntry(text) {
+function addActivityEntry(iconName, text, cls) {
   const empty = activityListEl.querySelector(".activity-empty");
   if (empty) empty.remove();
   const li = document.createElement("li");
-  li.textContent = text;
+  if (cls) li.className = cls;
+  li.innerHTML = `<span class="entry-icon">${icon(iconName)}</span><span>${text}</span>`;
   activityListEl.prepend(li);
   while (activityListEl.children.length > ACTIVITY_MAX) {
     activityListEl.removeChild(activityListEl.lastChild);
@@ -156,14 +162,11 @@ function addActivityEntry(text) {
 }
 
 function setAgentActivity(label) {
-  activeToolLabel = label;
   if (!label) {
     agentsListEl.innerHTML = '<div class="agents-empty">Sin actividad</div>';
     return;
   }
-  agentsListEl.innerHTML = `
-    <div class="agent-item"><span class="agent-dot"></span><span>${label}</span></div>
-  `;
+  agentsListEl.innerHTML = `<div class="agent-item"><span class="agent-dot"></span><span>${label}</span></div>`;
 }
 
 function clearPlan() {
@@ -176,7 +179,7 @@ function addPlanStep(id, name) {
   const empty = planListEl.querySelector(".plan-empty");
   if (empty) empty.remove();
   const li = document.createElement("li");
-  li.textContent = `→ ${name}`;
+  li.innerHTML = `<span class="entry-icon">${icon("arrow-left", "rotate-180")}</span><span>${name}</span>`;
   planListEl.appendChild(li);
   planSteps.set(id, li);
 }
@@ -185,7 +188,8 @@ function completePlanStep(id, denied) {
   const li = planSteps.get(id);
   if (!li) return;
   li.classList.add(denied ? "denied" : "done");
-  li.textContent = (denied ? "✗ " : "✓ ") + li.textContent.replace(/^[→✓✗]\s*/, "");
+  const label = li.querySelector("span:last-child").textContent;
+  li.innerHTML = `<span class="entry-icon">${icon(denied ? "x" : "check-circle")}</span><span>${label}</span>`;
 }
 
 // Un envio nuevo (texto o accion rapida) empieza un turno nuevo: el plan
@@ -195,13 +199,13 @@ form.addEventListener("submit", () => clearPlan(), true);
 window.addEventListener("atlas:tool", (e) => {
   const d = e.detail;
   if (d.phase === "call") {
-    addActivityEntry(`🔧 ${d.name}`);
+    addActivityEntry("wrench", d.name);
     addPlanStep(d.id, d.name);
     setAgentActivity(`Atlas — usando ${d.name}`);
   } else if (d.phase === "confirm") {
-    addActivityEntry(`⏳ ${d.name} — esperando autorización`);
+    addActivityEntry("warning", `${d.name} — esperando autorización`, "pending");
   } else if (d.phase === "result") {
-    addActivityEntry(`${d.denied ? "❌" : "✅"} ${d.name}`);
+    addActivityEntry(d.denied ? "x" : "check-circle", d.name, d.denied ? "denied" : "done");
     completePlanStep(d.id, d.denied);
     setAgentActivity(null);
   }
