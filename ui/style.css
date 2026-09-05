@@ -99,3 +99,73 @@ button {
   background: #e0483e;
   color: white;
 }
+
+#stop-button {
+  background: #eef0fb;
+  color: #b0413e;
+}
+
+#stop-button:disabled,
+#input:disabled,
+#composer button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.msg.tool-call,
+.msg.tool-result {
+  font-size: 0.85em;
+  color: #555;
+  background: #f2f2fa;
+  border: 1px solid #ddd;
+}
+
+.msg.confirm {
+  border: 2px solid;
+  padding-bottom: 6px;
+}
+
+.msg.confirm-sensitive {
+  border-color: #d8a400;
+  background: #fff8e0;
+}
+
+.msg.confirm-critical {
+  border-color: #d0342c;
+  background: #fdeceb;
+}
+
+.confirm-label {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.confirm-desc {
+  margin-bottom: 8px;
+  font-family: monospace;
+  font-size: 0.9em;
+  word-break: break-word;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.confirm-actions .confirm-approve {
+  background: #2e8b46;
+}
+
+.confirm-actions .confirm-deny {
+  background: #b0413e;
+}
+
+.confirm-resolved-yes .confirm-desc::after {
+  content: " — ✅ permitido";
+  color: #2e8b46;
+}
+
+.confirm-resolved-no .confirm-desc::after {
+  content: " — ❌ denegado";
+  color: #b0413e;
+}

@@ -1,4 +1,5 @@
 import asyncio
+import json
 from collections.abc import AsyncIterator
 
 import litellm
@@ -48,6 +49,80 @@ async def stream_reply(role: str, messages: list[dict]) -> AsyncIterator[str]:
             last_error = exc
             # Si ya empezamos a mandar texto al cliente, reintentar
             # duplicaria el inicio de la respuesta - mejor propagar el error.
+            if yielded_any or attempt == MAX_ATTEMPTS:
+                raise
+            await asyncio.sleep(RETRY_DELAY_SECONDS * attempt)
+
+    raise last_error
+
+
+async def stream_agent_turn(
+    role: str, messages: list[dict], tools: list[dict]
+) -> AsyncIterator[dict]:
+    """Como stream_reply, pero permite que el modelo pida usar
+    herramientas. En vez de trozos de texto sueltos, produce eventos:
+      {"type": "text", "text": str}
+      {"type": "tool_call", "id": str, "name": str, "arguments": dict}
+
+    Gemini manda los fragmentos de cada llamada a herramienta repartidos
+    en varios chunks (delta.tool_calls), identificados por indice - hay
+    que ir acumulando id/nombre/argumentos (un JSON parcial) por indice
+    y recien armar+parsear cada llamada completa cuando el stream
+    termina, nunca a mitad de camino."""
+    model = model_for_role(role)
+    last_error: Exception | None = None
+
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        yielded_any = False
+        tool_calls_acc: dict[int, dict] = {}
+        try:
+            response = await asyncio.wait_for(
+                litellm.acompletion(
+                    model=model,
+                    messages=messages,
+                    tools=tools,
+                    stream=True,
+                    timeout=REQUEST_TIMEOUT_SECONDS,
+                    num_retries=NUM_INTERNAL_RETRIES,
+                ),
+                timeout=REQUEST_TIMEOUT_SECONDS,
+            )
+            stream = response.__aiter__()
+            while True:
+                chunk = await asyncio.wait_for(
+                    stream.__anext__(), timeout=REQUEST_TIMEOUT_SECONDS
+                )
+                delta = chunk.choices[0].delta
+                if delta.content:
+                    yielded_any = True
+                    yield {"type": "text", "text": delta.content}
+                if getattr(delta, "tool_calls", None):
+                    yielded_any = True
+                    for tc in delta.tool_calls:
+                        entry = tool_calls_acc.setdefault(
+                            tc.index, {"id": None, "name": None, "arguments_buffer": ""}
+                        )
+                        if tc.id:
+                            entry["id"] = tc.id
+                        if tc.function and tc.function.name:
+                            entry["name"] = tc.function.name
+                        if tc.function and tc.function.arguments:
+                            entry["arguments_buffer"] += tc.function.arguments
+        except StopAsyncIteration:
+            for index, entry in tool_calls_acc.items():
+                try:
+                    args = json.loads(entry["arguments_buffer"] or "{}")
+                except json.JSONDecodeError:
+                    args = {}
+                yield {
+                    "type": "tool_call",
+                    "id": entry["id"] or f"call_{index}",
+                    "name": entry["name"],
+                    "arguments": args,
+                }
+            return
+        except Exception as exc:
+            last_error = exc
             if yielded_any or attempt == MAX_ATTEMPTS:
                 raise
             await asyncio.sleep(RETRY_DELAY_SECONDS * attempt)

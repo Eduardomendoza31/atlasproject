@@ -2,6 +2,7 @@ const chatEl = document.getElementById("chat");
 const form = document.getElementById("composer");
 const input = document.getElementById("input");
 const micButton = document.getElementById("mic-button");
+const stopButton = document.getElementById("stop-button");
 const faceBaseEl = document.getElementById("face-base");
 const faceMouthEl = document.getElementById("face-mouth");
 const faceEyeLeftEl = document.getElementById("face-eye-left");
@@ -135,6 +136,79 @@ function clearTyping() {
   }
 }
 
+// --- Herramientas: aviso/confirmacion/resultado, y el boton de Detener.
+// Mismos niveles de riesgo que core/tools.py (duplicado a proposito -
+// son 4 strings constantes, no vale la pena un endpoint solo para esto).
+const TOOL_TIERS = {
+  read_file: "safe",
+  list_directory: "safe",
+  write_file: "sensitive",
+  run_command: "critical",
+};
+const TIER_EMOJI = { safe: "🟢", sensitive: "🟡", critical: "🔴" };
+
+let turnInFlight = false;
+let pendingConfirmId = null;
+
+function setTurnInFlight(inFlight) {
+  turnInFlight = inFlight;
+  stopButton.disabled = !inFlight;
+}
+
+function setComposerEnabled(enabled) {
+  input.disabled = !enabled;
+  form.querySelector('button[type="submit"]').disabled = !enabled;
+  micButton.disabled = !enabled;
+}
+
+function addConfirmBubble({ id, name, tier, description }) {
+  setComposerEnabled(false);
+  pendingConfirmId = id;
+  const div = document.createElement("div");
+  div.className = `msg atlas confirm confirm-${tier}`;
+  const tierLabel = tier === "critical" ? "🔴 Acción crítica" : "🟡 Confirmación requerida";
+
+  const label = document.createElement("div");
+  label.className = "confirm-label";
+  label.textContent = tierLabel;
+
+  const desc = document.createElement("div");
+  desc.className = "confirm-desc";
+  desc.textContent = description;
+
+  const actions = document.createElement("div");
+  actions.className = "confirm-actions";
+  const approveBtn = document.createElement("button");
+  approveBtn.type = "button";
+  approveBtn.className = "confirm-approve";
+  approveBtn.textContent = "Permitir";
+  const denyBtn = document.createElement("button");
+  denyBtn.type = "button";
+  denyBtn.className = "confirm-deny";
+  denyBtn.textContent = "Denegar";
+  actions.appendChild(approveBtn);
+  actions.appendChild(denyBtn);
+
+  div.appendChild(label);
+  div.appendChild(desc);
+  div.appendChild(actions);
+  chatEl.appendChild(div);
+  chatEl.scrollTop = chatEl.scrollHeight;
+
+  approveBtn.addEventListener("click", () => resolveConfirm(id, true, div));
+  denyBtn.addEventListener("click", () => resolveConfirm(id, false, div));
+}
+
+function resolveConfirm(id, approved, bubbleEl) {
+  sendMessage({ type: "tool_confirm_response", id, approved });
+  bubbleEl.querySelector(".confirm-actions").remove();
+  bubbleEl.classList.add(approved ? "confirm-resolved-yes" : "confirm-resolved-no");
+  if (pendingConfirmId === id) {
+    pendingConfirmId = null;
+    setComposerEnabled(true);
+  }
+}
+
 function connect() {
   ws = new WebSocket("ws://127.0.0.1:8731/ws/chat");
 
@@ -143,6 +217,7 @@ function connect() {
     if (data.type === "transcript") {
       addMessage(data.text, "user");
       typingBubble = addMessage("escribiendo…", "atlas typing");
+      setTurnInFlight(true);
     } else if (data.type === "chunk") {
       clearTyping();
       if (!atlasBubble) {
@@ -152,13 +227,37 @@ function connect() {
       chatEl.scrollTop = chatEl.scrollHeight;
     } else if (data.type === "done") {
       atlasBubble = null;
+      setTurnInFlight(false);
     } else if (data.type === "error") {
       clearTyping();
       atlasBubble = null;
+      setTurnInFlight(false);
       addMessage(`⚠️ ${data.text}`, "atlas");
     } else if (data.type === "audio_reply") {
       const audio = new Audio(`data:audio/mpeg;base64,${data.data}`);
       playWithLipSync(audio);
+    } else if (data.type === "tool_call") {
+      clearTyping();
+      const tier = TOOL_TIERS[data.name] || "safe";
+      addMessage(
+        `${TIER_EMOJI[tier]} Atlas usa: ${data.name}(${JSON.stringify(data.arguments)})`,
+        "atlas tool-call"
+      );
+    } else if (data.type === "tool_confirm_request") {
+      clearTyping();
+      addConfirmBubble(data);
+    } else if (data.type === "tool_result") {
+      const label = data.denied ? "denegado" : "resultado";
+      addMessage(`${data.name} — ${label}: ${data.result}`, "atlas tool-result");
+    } else if (data.type === "stopped") {
+      clearTyping();
+      atlasBubble = null;
+      setTurnInFlight(false);
+      if (pendingConfirmId) {
+        pendingConfirmId = null;
+        setComposerEnabled(true);
+      }
+      addMessage("⏹ Turno detenido.", "atlas");
     }
   };
 
@@ -186,6 +285,11 @@ form.addEventListener("submit", (e) => {
   addMessage(text, "user");
   input.value = "";
   typingBubble = addMessage("escribiendo…", "atlas typing");
+  setTurnInFlight(true);
+});
+
+stopButton.addEventListener("click", () => {
+  sendMessage({ type: "stop" });
 });
 
 // MediaRecorder.stop() tumba el proceso completo en este Chromium
