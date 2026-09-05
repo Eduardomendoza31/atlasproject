@@ -492,17 +492,17 @@ body[data-atlas-state="escuchando"] .card-rail {
   position: relative;
   z-index: 1;
   width: min(260px, 92%);
-  /* La foto base tiene fondo blanco solido (no transparente) - contra
-     el tema oscuro se ve como una tarjeta pegada. Sin tocar la imagen
-     ni la logica de face.js, se desvanece POR COMPLETO con una mascara
-     puramente visual para que se funda con el halo/anillo de atras.
-     Ojo: una elipse mas chica que esta recorta cabeza/hombros (se ve
-     "cortado"); este es el que probamos y confirmamos sin nada de
-     blanco (ver commit e5a593e) - no acortar el degradado: un intento
-     de hacerlo mas corto (70%->88%) dejo ver MAS fondo blanco de la
-     foto, no menos, porque la parte opaca de la elipse crece. */
-  -webkit-mask-image: radial-gradient(ellipse 55% 65% at 50% 42%, black 45%, transparent 100%);
-  mask-image: radial-gradient(ellipse 55% 65% at 50% 42%, black 45%, transparent 100%);
+  /* El fondo ya NO se apaga con un mask-image de CSS (una elipse nunca
+     calza perfecto con la silueta real de cabeza+cuello+hombros: dejaba
+     ver "fantasmas" del fondo de la foto - lineas rectas donde el
+     degradado todavia mostraba fondo casi blanco a media opacidad, no
+     la cabeza). Se cambio por un canal alpha real ya calculado en la
+     imagen (manifest.js ahora apunta a base.png en vez de base.jpg,
+     mismo tamaño/bboxes): cualquier pixel dentro de la zona de
+     desvanecido que sea practicamente igual al gris de fondo
+     (247,247,247) se vuelve transparente de una, el resto sigue un
+     degradado eliptico suave igual de generoso que el que ya estaba
+     probado (no clipea cabeza/hombros). */
 }
 
 /* ---------- Modo voz ---------- */

@@ -1,5 +1,5 @@
 window.FACE_MANIFEST = {
-  "base_image": "assets/face/base.jpg",
+  "base_image": "assets/face/base.png",
   "base_size": {
     "w": 1024,
     "h": 1536
