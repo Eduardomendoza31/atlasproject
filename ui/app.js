@@ -4,6 +4,8 @@ const input = document.getElementById("input");
 const micButton = document.getElementById("mic-button");
 const faceBaseEl = document.getElementById("face-base");
 const faceMouthEl = document.getElementById("face-mouth");
+const faceEyeLeftEl = document.getElementById("face-eye-left");
+const faceEyeRightEl = document.getElementById("face-eye-right");
 
 let ws = null;
 let atlasBubble = null;
@@ -18,14 +20,45 @@ const manifest = window.FACE_MANIFEST;
 let audioCtx = null;
 let analyser = null;
 
+function positionOverlay(el, bbox) {
+  el.style.left = `${(bbox.x / manifest.base_size.w) * 100}%`;
+  el.style.top = `${(bbox.y / manifest.base_size.h) * 100}%`;
+  el.style.width = `${(bbox.w / manifest.base_size.w) * 100}%`;
+  el.style.height = `${(bbox.h / manifest.base_size.h) * 100}%`;
+  el.style.display = "block";
+}
+
 if (manifest) {
   faceBaseEl.src = manifest.base_image;
+
   faceMouthEl.src = manifest.mouth_shapes.closed;
-  faceMouthEl.style.left = `${(manifest.mouth_bbox.x / manifest.base_size.w) * 100}%`;
-  faceMouthEl.style.top = `${(manifest.mouth_bbox.y / manifest.base_size.h) * 100}%`;
-  faceMouthEl.style.width = `${(manifest.mouth_bbox.w / manifest.base_size.w) * 100}%`;
-  faceMouthEl.style.height = `${(manifest.mouth_bbox.h / manifest.base_size.h) * 100}%`;
-  faceMouthEl.style.display = "block";
+  positionOverlay(faceMouthEl, manifest.mouth_bbox);
+
+  faceEyeLeftEl.src = manifest.eyes.left.shapes.open;
+  positionOverlay(faceEyeLeftEl, manifest.eyes.left.bbox);
+  faceEyeRightEl.src = manifest.eyes.right.shapes.open;
+  positionOverlay(faceEyeRightEl, manifest.eyes.right.bbox);
+
+  scheduleBlink();
+}
+
+// --- Parpadeo: independiente del audio, en intervalos aleatorios para
+// que no se vea como un metronomo.
+function blinkOnce() {
+  faceEyeLeftEl.src = manifest.eyes.left.shapes.closed;
+  faceEyeRightEl.src = manifest.eyes.right.shapes.closed;
+  setTimeout(() => {
+    faceEyeLeftEl.src = manifest.eyes.left.shapes.open;
+    faceEyeRightEl.src = manifest.eyes.right.shapes.open;
+  }, 140);
+}
+
+function scheduleBlink() {
+  const delay = 2500 + Math.random() * 3500;
+  setTimeout(() => {
+    blinkOnce();
+    scheduleBlink();
+  }, delay);
 }
 
 const MOUTH_RMS_HALF_OPEN = 0.02;

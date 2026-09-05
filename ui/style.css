@@ -23,7 +23,9 @@ body {
   border-radius: 12px;
 }
 
-#face-mouth {
+#face-mouth,
+#face-eye-left,
+#face-eye-right {
   display: none;
   position: absolute;
 }
