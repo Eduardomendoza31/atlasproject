@@ -485,13 +485,20 @@ body[data-atlas-state="escuchando"] .card-rail {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin: 0 22px 10px;
+  width: min(480px, calc(100% - 44px));
+  margin: 0 auto 10px;
   padding: 8px 8px 8px 18px;
   background: var(--panel-bg);
   box-shadow: var(--card-glow);
   border-radius: 999px;
   backdrop-filter: blur(12px);
   flex-shrink: 0;
+  transition: width 0.2s ease, box-shadow 0.2s ease;
+}
+
+#composer:focus-within {
+  width: min(560px, calc(100% - 44px));
+  box-shadow: var(--card-glow-hover);
 }
 
 .command-at {
@@ -508,12 +515,21 @@ body[data-atlas-state="escuchando"] .card-rail {
   border: none;
   outline: none;
   color: var(--text-0);
-  font-size: 14px;
+  font-size: 13.5px;
   padding: 6px 4px;
+  text-align: left;
+}
+
+/* Centrado solo mientras esta vacio (muestra el placeholder) - en cuanto
+   el usuario escribe, vuelve a alinear a la izquierda (lo natural al
+   teclear); asi se ve pequeño/centrado en reposo sin estorbar al usar. */
+#input:placeholder-shown {
+  text-align: center;
 }
 
 #input::placeholder {
   color: var(--text-2);
+  font-size: 13px;
 }
 
 #composer button[type="submit"],
@@ -561,17 +577,29 @@ body[data-atlas-state="escuchando"] .card-rail {
 /* ---------- Chat log ---------- */
 
 #chat {
-  margin: 0 22px 10px;
+  width: min(560px, calc(100% - 44px));
+  margin: 0 auto 10px;
   max-height: 200px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding-right: 4px;
+  gap: 10px;
+  padding: 2px 6px;
   flex-shrink: 1;
 }
 
+/* Burbujas flotantes: entran con un pequeño impulso hacia arriba (no
+   aparecen de golpe), corner asimetrico + "colita" como apps de
+   mensajeria conocidas, y flotan un poco al pasar el mouse. La cola
+   se omite en las filas de sistema (herramientas/confirmaciones) para
+   no ensuciar esas lineas mas tecnicas. */
+@keyframes msg-float-in {
+  from { opacity: 0; transform: translateY(14px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 .msg {
+  position: relative;
   max-width: 80%;
   padding: 9px 13px;
   border-radius: var(--radius-sm);
@@ -579,12 +607,26 @@ body[data-atlas-state="escuchando"] .card-rail {
   white-space: pre-wrap;
   font-size: 13px;
   word-break: break-word;
+  animation: msg-float-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.msg.user,
+.msg.atlas {
+  backdrop-filter: blur(10px);
+}
+
+.msg.user:hover,
+.msg.atlas:hover {
+  transform: translateY(-2px);
 }
 
 .msg.user {
   align-self: flex-end;
-  background: var(--accent);
+  background: linear-gradient(135deg, var(--accent), #5947d8);
   color: white;
+  border-radius: 16px 16px 4px 16px;
+  box-shadow: 0 10px 24px -14px rgba(109, 93, 240, 0.7);
 }
 
 .msg.atlas {
@@ -592,6 +634,28 @@ body[data-atlas-state="escuchando"] .card-rail {
   background: var(--panel-bg);
   box-shadow: var(--card-glow);
   color: var(--text-0);
+  border-radius: 16px 16px 16px 4px;
+}
+
+.msg.user:not(.tool-call):not(.tool-result):not(.confirm)::after,
+.msg.atlas:not(.tool-call):not(.tool-result):not(.confirm)::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  width: 11px;
+  height: 11px;
+}
+
+.msg.user:not(.tool-call):not(.tool-result):not(.confirm)::after {
+  right: -5px;
+  background: #5947d8;
+  clip-path: polygon(0 0, 100% 100%, 0 100%);
+}
+
+.msg.atlas:not(.tool-call):not(.tool-result):not(.confirm)::after {
+  left: -5px;
+  background: var(--panel-bg);
+  clip-path: polygon(100% 0, 100% 100%, 0 100%);
 }
 
 .msg.typing {
