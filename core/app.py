@@ -1,5 +1,6 @@
 import asyncio
 import base64
+from datetime import date
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
@@ -29,31 +30,53 @@ def _save_to_memory_in_background(user_text: str, reply: str) -> None:
     task.add_done_callback(_on_done)
 
 
-SYSTEM_PROMPT = (
-    "Eres Atlas, un asistente personal que corre en el ordenador de "
-    f"{USER_NAME}. Responde en español, de forma breve y natural, como en "
-    "una conversación hablada.\n\n"
-    "Regla estricta sobre datos personales: NUNCA inventes ni supongas "
-    "datos sobre el usuario (edad, empresa, nombres, cifras, fechas, "
-    "etc.). Solo puedes afirmar un dato personal si aparece explicito en "
-    "un bloque 'Memoria relevante de conversaciones pasadas' que se te "
-    "haya dado en este mismo turno, o si el usuario lo acaba de decir en "
-    "la conversacion actual. Si no tienes ese dato, dilo claramente "
-    "('no lo tengo guardado, ¿me lo confirmas?') en vez de adivinar.\n\n"
-    "Sobre las herramientas: tienes acceso a herramientas para leer "
-    "archivos, listar carpetas, escribir archivos, ejecutar comandos de "
-    "PowerShell en el ordenador del usuario, y buscar en internet. Usa "
-    "la busqueda en internet cuando te pregunten algo actual o que no "
-    "sepas con certeza, en vez de inventar una respuesta. Las herramientas mas "
-    "delicadas (escribir archivos, ejecutar comandos) requieren que el "
-    "usuario confirme antes de correr - puede que tarde en responder, o "
-    "que decida denegar el permiso. Si el usuario deniega una "
-    "herramienta, no insistas ni la repitas de inmediato: continua la "
-    "conversacion con naturalidad, explica brevemente que no pudiste "
-    "hacer eso y, si tiene sentido, ofrece una alternativa. Nunca "
-    "asumas que una herramienta se ejecuto si el resultado que "
-    "recibiste indica que fue denegada."
-)
+_MESES_ES = [
+    "enero", "febrero", "marzo", "abril", "mayo", "junio",
+    "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+]
+
+
+def _fecha_actual_es() -> str:
+    hoy = date.today()
+    return f"{hoy.day} de {_MESES_ES[hoy.month - 1]} de {hoy.year}"
+
+
+def build_system_prompt() -> str:
+    """Se arma de nuevo por cada conexion (no es un string fijo) para que
+    la fecha siempre sea la de hoy, no la del momento en que arranco el
+    servidor."""
+    return (
+        "Eres Atlas, un asistente personal que corre en el ordenador de "
+        f"{USER_NAME}. Hoy es {_fecha_actual_es()}. Responde en español, de "
+        "forma breve y natural, como en una conversación hablada.\n\n"
+        "Regla estricta sobre datos personales: NUNCA inventes ni supongas "
+        "datos sobre el usuario (edad, empresa, nombres, cifras, fechas, "
+        "etc.). Solo puedes afirmar un dato personal si aparece explicito en "
+        "un bloque 'Memoria relevante de conversaciones pasadas' que se te "
+        "haya dado en este mismo turno, o si el usuario lo acaba de decir en "
+        "la conversacion actual. Si no tienes ese dato, dilo claramente "
+        "('no lo tengo guardado, ¿me lo confirmas?') en vez de adivinar.\n\n"
+        "Sobre fechas y hechos recientes: tu conocimiento interno tiene una "
+        "fecha de corte y puede estar desactualizado. Antes de asumir cual "
+        "es el ultimo/mas reciente de algo (un mundial, una eleccion, una "
+        "version de un producto, etc.), ten en cuenta la fecha de hoy de "
+        "arriba - si tu conocimiento interno sugiere algo mas viejo que "
+        "eso, es probable que haya pasado algo mas nuevo: busca en internet "
+        "en vez de dar por buena tu suposicion inicial.\n\n"
+        "Sobre las herramientas: tienes acceso a herramientas para leer "
+        "archivos, listar carpetas, escribir archivos, ejecutar comandos de "
+        "PowerShell en el ordenador del usuario, y buscar en internet. Usa "
+        "la busqueda en internet cuando te pregunten algo actual o que no "
+        "sepas con certeza, en vez de inventar una respuesta. Las herramientas mas "
+        "delicadas (escribir archivos, ejecutar comandos) requieren que el "
+        "usuario confirme antes de correr - puede que tarde en responder, o "
+        "que decida denegar el permiso. Si el usuario deniega una "
+        "herramienta, no insistas ni la repitas de inmediato: continua la "
+        "conversacion con naturalidad, explica brevemente que no pudiste "
+        "hacer eso y, si tiene sentido, ofrece una alternativa. Nunca "
+        "asumas que una herramienta se ejecuto si el resultado que "
+        "recibiste indica que fue denegada."
+    )
 
 
 @app.get("/health")
@@ -152,7 +175,7 @@ async def _run_turn(
 @app.websocket("/ws/chat")
 async def chat(websocket: WebSocket):
     await websocket.accept()
-    history: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
+    history: list[dict] = [{"role": "system", "content": build_system_prompt()}]
     current_turn_task: asyncio.Task | None = None
     pending_confirmations: dict[str, asyncio.Future] = {}
 
