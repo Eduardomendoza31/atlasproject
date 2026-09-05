@@ -152,10 +152,20 @@ function connect() {
     } else if (data.type === "tool_call") {
       clearTyping();
       const tier = TOOL_TIERS[data.name] || "safe";
-      addMessage(
-        `${TIER_EMOJI[tier]} Atlas usa: ${data.name}(${JSON.stringify(data.arguments)})`,
-        "atlas tool-call"
-      );
+      if (data.name === "announce_plan") {
+        const steps = data.arguments.steps || [];
+        const list = steps.map((s, i) => `${i + 1}. ${s}`).join("\n");
+        addMessage(`📋 Plan:\n${list}`, "atlas plan-announce");
+      } else if (data.name === "report_outcome") {
+        const { summary, verified, success } = data.arguments;
+        const badge = success ? (verified ? "✅ Hecho y verificado" : "⚠️ Hecho, sin verificar") : "❌ No se logró";
+        addMessage(`${badge}: ${summary}`, "atlas outcome-report");
+      } else {
+        addMessage(
+          `${TIER_EMOJI[tier]} Atlas usa: ${data.name}(${JSON.stringify(data.arguments)})`,
+          "atlas tool-call"
+        );
+      }
       emitTool({ phase: "call", id: data.id, name: data.name, arguments: data.arguments, tier });
       setAtlasState("ejecutando");
     } else if (data.type === "tool_confirm_request") {
@@ -170,8 +180,14 @@ function connect() {
       });
       setAtlasState("autorizacion");
     } else if (data.type === "tool_result") {
-      const label = data.denied ? "denegado" : "resultado";
-      addMessage(`${data.name} — ${label}: ${data.result}`, "atlas tool-result");
+      // announce_plan/report_outcome ya mostraron su propio mensaje al
+      // llegar como tool_call (con los datos reales del plan/resultado) -
+      // el "resultado" de estas dos es solo un acuse interno, no aporta
+      // nada nuevo en pantalla.
+      if (data.name !== "announce_plan" && data.name !== "report_outcome") {
+        const label = data.denied ? "denegado" : "resultado";
+        addMessage(`${data.name} — ${label}: ${data.result}`, "atlas tool-result");
+      }
       emitTool({
         phase: "result",
         id: data.id,

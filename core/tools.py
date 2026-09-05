@@ -271,6 +271,75 @@ register(Tool(
     confirm_text=lambda a: f"Ejecutar comando: {a.get('command')}",
 ))
 
+async def _exec_announce_plan(arguments: dict) -> str:
+    # No hace nada por si sola - su unico valor es que sus argumentos
+    # (los pasos) le llegan a la interfaz via el evento tool_call, para
+    # mostrar el plan ANTES de actuar (transparencia real, no un log
+    # armado despues de los hechos).
+    steps = arguments.get("steps", [])
+    return f"Plan recibido ({len(steps)} paso{'s' if len(steps) != 1 else ''})."
+
+
+async def _exec_report_outcome(arguments: dict) -> str:
+    # Idem: el valor esta en que el modelo declare explicitamente si
+    # verifico el resultado, no en que esta funcion "haga" algo.
+    return "Resultado registrado."
+
+
+register(Tool(
+    name="announce_plan",
+    description=(
+        "Anuncia el plan de pasos ANTES de empezar a ejecutar una tarea que "
+        "requiere varias acciones sobre el computador (no uses esto para "
+        "responder una pregunta simple). Llamala una vez, al principio, con "
+        "los pasos concretos que vas a seguir."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "steps": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Lista breve de los pasos que vas a ejecutar, en orden.",
+            },
+        },
+        "required": ["steps"],
+    },
+    tier="safe",
+    executor=_exec_announce_plan,
+    confirm_text=lambda a: "Anunciar plan",
+))
+
+register(Tool(
+    name="report_outcome",
+    description=(
+        "Cierra una tarea de varios pasos informando el resultado real. "
+        "Llamala al final, despues de haber verificado el resultado con una "
+        "herramienta de lectura (read_file, list_directory, o revisando la "
+        "salida/exit code de run_command) - nunca antes de verificar, y "
+        "nunca marques verified=true si no comprobaste el resultado de "
+        "verdad."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "summary": {"type": "string", "description": "Que se hizo, en una o dos frases."},
+            "verified": {
+                "type": "boolean",
+                "description": "Si de verdad comprobaste el resultado con una herramienta de lectura.",
+            },
+            "success": {
+                "type": "boolean",
+                "description": "Si la tarea se completo correctamente segun esa verificacion.",
+            },
+        },
+        "required": ["summary", "verified", "success"],
+    },
+    tier="safe",
+    executor=_exec_report_outcome,
+    confirm_text=lambda a: "Informar resultado",
+))
+
 register(Tool(
     name="web_search",
     description=(

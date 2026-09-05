@@ -224,19 +224,37 @@ function highlightCard(cardKey) {
   });
 }
 
+// announce_plan/report_outcome son "meta" - anuncian intencion o cierran
+// una tarea, no son una accion real sobre el computador. Se loguean en
+// Actividad reciente con su propio icono, pero no ocupan un paso del
+// checklist "Plan del turno actual" (ese panel es para las acciones
+// reales que van pasando, no para el plan que el modelo declaro).
+const META_TOOLS = new Set(["announce_plan", "report_outcome"]);
+
 window.addEventListener("atlas:tool", (e) => {
   const d = e.detail;
   if (d.phase === "call") {
-    addActivityEntry("wrench", d.name);
-    addPlanStep(d.id, d.name);
-    setAgentActivity(`Atlas — usando ${d.name}`);
-    highlightCard(TOOL_TO_CARD[d.name]);
+    if (d.name === "announce_plan") {
+      addActivityEntry("compass", "Atlas anunció un plan");
+      setAgentActivity("Atlas — planificando");
+    } else if (d.name === "report_outcome") {
+      const ok = d.arguments && d.arguments.success;
+      addActivityEntry(ok ? "check-circle" : "warning", "Atlas informó el resultado", ok ? "done" : "pending");
+      setAgentActivity(null);
+    } else {
+      addActivityEntry("wrench", d.name);
+      addPlanStep(d.id, d.name);
+      setAgentActivity(`Atlas — usando ${d.name}`);
+      highlightCard(TOOL_TO_CARD[d.name]);
+    }
   } else if (d.phase === "confirm") {
     addActivityEntry("warning", `${d.name} — esperando autorización`, "pending");
   } else if (d.phase === "result") {
-    addActivityEntry(d.denied ? "x" : "check-circle", d.name, d.denied ? "denied" : "done");
-    completePlanStep(d.id, d.denied);
-    setAgentActivity(null);
-    highlightCard(null);
+    if (!META_TOOLS.has(d.name)) {
+      addActivityEntry(d.denied ? "x" : "check-circle", d.name, d.denied ? "denied" : "done");
+      completePlanStep(d.id, d.denied);
+      setAgentActivity(null);
+      highlightCard(null);
+    }
   }
 });

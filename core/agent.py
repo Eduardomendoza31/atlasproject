@@ -14,7 +14,7 @@ from typing import Awaitable, Callable
 from core.providers import stream_agent_turn
 from core.tools import Tool, all_tool_schemas, get_tool
 
-MAX_TOOL_ROUNDTRIPS = 6
+MAX_TOOL_ROUNDTRIPS = 10
 
 # (tool_call_id, tool, arguments) -> aprobado?
 ConfirmCallback = Callable[[str, Tool, dict], Awaitable[bool]]
