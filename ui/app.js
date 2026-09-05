@@ -2,10 +2,89 @@ const chatEl = document.getElementById("chat");
 const form = document.getElementById("composer");
 const input = document.getElementById("input");
 const micButton = document.getElementById("mic-button");
+const faceBaseEl = document.getElementById("face-base");
+const faceMouthEl = document.getElementById("face-mouth");
 
 let ws = null;
 let atlasBubble = null;
 let typingBubble = null;
+
+// --- Rostro animado: superpone una boca recortada sobre la foto base y la
+// cambia de forma segun el volumen del audio que se esta reproduciendo
+// (no hay timing real de visemas de edge-tts, asi que se aproxima por
+// amplitud: silencio -> cerrada, volumen medio -> semi-abierta, fuerte ->
+// abierta).
+const manifest = window.FACE_MANIFEST;
+let audioCtx = null;
+let analyser = null;
+
+if (manifest) {
+  faceBaseEl.src = manifest.base_image;
+  faceMouthEl.src = manifest.mouth_shapes.closed;
+  faceMouthEl.style.left = `${(manifest.mouth_bbox.x / manifest.base_size.w) * 100}%`;
+  faceMouthEl.style.top = `${(manifest.mouth_bbox.y / manifest.base_size.h) * 100}%`;
+  faceMouthEl.style.width = `${(manifest.mouth_bbox.w / manifest.base_size.w) * 100}%`;
+  faceMouthEl.style.height = `${(manifest.mouth_bbox.h / manifest.base_size.h) * 100}%`;
+  faceMouthEl.style.display = "block";
+}
+
+const MOUTH_RMS_HALF_OPEN = 0.02;
+const MOUTH_RMS_OPEN = 0.06;
+
+function setMouthShape(shape) {
+  if (!manifest || faceMouthEl.dataset.shape === shape) return;
+  faceMouthEl.dataset.shape = shape;
+  faceMouthEl.src = manifest.mouth_shapes[shape];
+}
+
+function getAnalyser() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 512;
+    analyser.connect(audioCtx.destination);
+  }
+  return analyser;
+}
+
+function playWithLipSync(audio) {
+  if (!manifest) {
+    audio.play().catch(() => {});
+    return;
+  }
+  try {
+    const activeAnalyser = getAnalyser();
+    const source = audioCtx.createMediaElementSource(audio);
+    source.connect(activeAnalyser);
+    const samples = new Uint8Array(activeAnalyser.fftSize);
+    let rafId = null;
+
+    const tick = () => {
+      activeAnalyser.getByteTimeDomainData(samples);
+      let sumSquares = 0;
+      for (let i = 0; i < samples.length; i++) {
+        const v = (samples[i] - 128) / 128;
+        sumSquares += v * v;
+      }
+      const rms = Math.sqrt(sumSquares / samples.length);
+      if (rms > MOUTH_RMS_OPEN) setMouthShape("open");
+      else if (rms > MOUTH_RMS_HALF_OPEN) setMouthShape("half_open");
+      else setMouthShape("closed");
+      rafId = requestAnimationFrame(tick);
+    };
+
+    audio.addEventListener("play", () => {
+      rafId = requestAnimationFrame(tick);
+    });
+    audio.addEventListener("ended", () => {
+      cancelAnimationFrame(rafId);
+      setMouthShape("closed");
+    });
+    audio.play().catch(() => {});
+  } catch (err) {
+    audio.play().catch(() => {});
+  }
+}
 
 function addMessage(text, who) {
   const div = document.createElement("div");
@@ -46,7 +125,7 @@ function connect() {
       addMessage(`⚠️ ${data.text}`, "atlas");
     } else if (data.type === "audio_reply") {
       const audio = new Audio(`data:audio/mpeg;base64,${data.data}`);
-      audio.play().catch(() => {});
+      playWithLipSync(audio);
     }
   };
 

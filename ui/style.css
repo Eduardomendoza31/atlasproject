@@ -9,6 +9,25 @@ body {
   background: #eef0fb;
 }
 
+#face-wrap {
+  position: relative;
+  width: 180px;
+  margin: 14px auto 0;
+  flex-shrink: 0;
+}
+
+#face-base {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+}
+
+#face-mouth {
+  display: none;
+  position: absolute;
+}
+
 #chat {
   flex: 1;
   overflow-y: auto;
