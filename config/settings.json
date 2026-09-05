@@ -12,5 +12,8 @@
       "provider": "google",
       "model": "gemini/gemini-embedding-001"
     }
+  },
+  "face": {
+    "base_image": "ui/assets/face/base.jpg"
   }
 }

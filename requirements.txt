@@ -8,3 +8,5 @@ PyQt6-WebEngine==6.8.0
 pydantic==2.10.4
 faster-whisper==1.2.1
 edge-tts==7.2.8
+mediapipe==0.10.21
+opencv-contrib-python==4.11.0.86
