@@ -3,14 +3,32 @@ import base64
 from datetime import date
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 
 from core.agent import run_agent_turn
 from core.config import USER_NAME
+from core.skills import installed_skills, load_all as load_skills
 from core.tools import RUN_COMMAND_UI_OUTPUT_CAP, Tool
 from core.voice import synthesize, transcribe
 from memory.cortex import maybe_save, relevant_context
 
 app = FastAPI(title="Atlas Core")
+
+# Atlas solo escucha en 127.0.0.1 (nunca expuesto a la red), y la UI la
+# carga localmente (file:// en la app real, o un puerto de prueba
+# aparte al desarrollar) - permitir cualquier origen aca no abre nada
+# que no estuviera ya disponible solo para el propio usuario en su PC.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Se cargan al importar este modulo (no en un evento de startup aparte)
+# porque las herramientas de cada skill tienen que estar registradas
+# ANTES de que el primer turno pida el esquema de herramientas.
+load_skills()
 
 background_tasks: set[asyncio.Task] = set()
 
@@ -101,6 +119,16 @@ def build_system_prompt() -> str:
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/skills")
+async def list_skills():
+    return {
+        "skills": [
+            {"name": s.name, "description": s.description}
+            for s in installed_skills()
+        ]
+    }
 
 
 async def _run_turn(

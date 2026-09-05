@@ -1047,6 +1047,30 @@ body[data-atlas-state="escuchando"] .card-rail {
 
 .activity-list li.pending .entry-icon { color: var(--warning); }
 
+.skills-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.skill-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--text-0);
+}
+
+.skill-item .entry-icon { color: var(--accent-2); margin-top: 1px; }
+
+.skill-desc {
+  color: var(--text-2);
+  font-size: 11px;
+}
+
 /* ---------- Responsivo ----------
    Cada punto de quiebre reordena el layout entero (no solo achica) para
    que nada quede montado: primero se esconde el panel derecho, despues

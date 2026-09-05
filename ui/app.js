@@ -98,6 +98,34 @@ function renderCards(setName) {
 
 renderCards("general");
 
+// --- Skills instaladas: reales, vienen del backend (core/skills.py).
+// Si el fetch falla o no hay ninguna, se deja el estado honesto de
+// "no hay skills" en vez de inventar una lista.
+const skillsListEl = document.getElementById("skills-list");
+
+async function loadSkills() {
+  try {
+    const res = await fetch("http://127.0.0.1:8731/skills");
+    const data = await res.json();
+    const skills = data.skills || [];
+    if (skills.length === 0) {
+      skillsListEl.innerHTML = '<li class="panel-empty">No hay skills instaladas todavía.</li>';
+      return;
+    }
+    skillsListEl.innerHTML = "";
+    skills.forEach((s) => {
+      const li = document.createElement("li");
+      li.className = "skill-item";
+      li.innerHTML = `<span class="entry-icon">${icon("puzzle-piece")}</span><span><strong>${s.name}</strong><br><span class="skill-desc">${s.description}</span></span>`;
+      skillsListEl.appendChild(li);
+    });
+  } catch {
+    skillsListEl.innerHTML = '<li class="panel-empty">No hay skills instaladas todavía.</li>';
+  }
+}
+
+loadSkills();
+
 // --- Barra de accesos rapidos: mandan una instruccion en lenguaje
 // natural, Atlas decide usar run_command (y el usuario confirma, como
 // con cualquier herramienta critica) - no se salta el flujo existente.
