@@ -420,10 +420,11 @@ body[data-atlas-state="escuchando"] .card-rail {
   /* La foto base tiene fondo blanco solido (no transparente) - contra
      el tema oscuro se ve como una tarjeta pegada. Sin tocar la imagen
      ni la logica de face.js, se desvanece POR COMPLETO con una mascara
-     puramente visual (ajustada para no dejar ningun resto de blanco en
-     las esquinas) para que se funda con el halo de atras. */
-  -webkit-mask-image: radial-gradient(ellipse 46% 56% at 50% 39%, black 25%, transparent 82%);
-  mask-image: radial-gradient(ellipse 46% 56% at 50% 39%, black 25%, transparent 82%);
+     puramente visual para que se funda con el halo de atras. Ojo: una
+     elipse mas chica que esta recorta cabeza/hombros (se ve "cortado");
+     esta ya deja el rostro completo visible sin blanco en las esquinas. */
+  -webkit-mask-image: radial-gradient(ellipse 55% 65% at 50% 42%, black 45%, transparent 100%);
+  mask-image: radial-gradient(ellipse 55% 65% at 50% 42%, black 45%, transparent 100%);
 }
 
 /* ---------- Modo voz ---------- */
