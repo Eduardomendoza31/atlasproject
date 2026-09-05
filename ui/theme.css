@@ -76,13 +76,15 @@ button {
 }
 
 .brand-mark {
-  width: 26px;
-  height: 26px;
+  width: 30px;
+  height: 30px;
   color: var(--accent-2);
   filter: drop-shadow(0 0 6px var(--accent-soft));
+  flex-shrink: 0;
 }
 
 .brand-mark svg { width: 100%; height: 100%; }
+.brand-mark img { width: 100%; height: 100%; object-fit: contain; display: block; }
 
 .brand-text strong {
   display: block;
@@ -312,7 +314,7 @@ button {
 .card-rail {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 16px;
   min-width: 0;
   transition: opacity 0.25s ease;
 }
@@ -320,50 +322,141 @@ button {
 .card-rail-left { grid-column: 1; }
 .card-rail-right { grid-column: 3; }
 
+/* Escalonado sutil: que las tarjetas no queden en una fila perfecta
+   pegada al rostro, sino un poco esparcidas, como si orbitaran. */
+.card-rail-left .action-card:nth-child(odd) { margin-right: 14px; }
+.card-rail-left .action-card:nth-child(even) { margin-left: 6px; }
+.card-rail-right .action-card:nth-child(odd) { margin-left: 14px; }
+.card-rail-right .action-card:nth-child(even) { margin-right: 6px; }
+
 .action-card {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: var(--panel-bg);
+  position: relative;
+  display: block;
+  background: linear-gradient(165deg, rgba(126, 232, 250, 0.05), var(--panel-bg) 40%);
   box-shadow: var(--card-glow);
-  border: none;
-  border-radius: var(--radius-md);
-  padding: 11px 13px;
+  border: 1px solid var(--panel-border);
+  border-radius: 14px;
+  padding: 12px 14px;
   color: var(--text-0);
   font-size: 12.5px;
   text-align: left;
   cursor: pointer;
-  backdrop-filter: blur(10px);
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-  animation: card-in 0.35s ease both;
+  backdrop-filter: blur(14px);
+  overflow: hidden;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, opacity 0.2s ease;
+  animation: card-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Linea fina de acento arriba de cada tarjeta - el detalle "modulo
+   holografico" que pidio Eduardo, sin exagerar (una sola linea, no un
+   marco completo brillante). */
+.action-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 14px;
+  right: 14px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--accent-2), transparent);
+  opacity: 0.6;
+}
+
+.action-card-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  animation: card-float var(--float-duration, 7s) ease-in-out infinite;
+  animation-delay: var(--float-delay, 0s);
+}
+
+.action-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .action-card:hover {
-  transform: translateY(-2px);
+  transform: translateY(-3px);
   box-shadow: var(--card-glow-hover);
+  border-color: var(--accent-2);
 }
 
-.action-card:active {
-  transform: translateY(0);
+.action-card:active .action-card-inner {
+  transform: scale(0.97);
+}
+
+.action-card.active-tool {
+  border-color: var(--accent-2);
+  box-shadow: 0 0 0 1px var(--accent-2), 0 0 22px -4px var(--accent-2);
+}
+
+.action-card.dimmed {
+  opacity: 0.45;
 }
 
 .action-card .icon {
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 9px;
+  border-radius: 10px;
   background: linear-gradient(160deg, var(--accent-soft), transparent);
   color: var(--accent-2);
+  box-shadow: inset 0 0 0 1px rgba(126, 232, 250, 0.18);
+  transition: transform 0.2s ease;
 }
+
+.action-card:hover .icon { transform: scale(1.08); }
 
 .action-card .icon svg { width: 16px; height: 16px; }
 
+.action-card-arrow {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-2);
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: opacity 0.2s ease, transform 0.2s ease, color 0.2s ease;
+}
+
+.action-card-arrow svg { width: 13px; height: 13px; }
+
+.action-card:hover .action-card-arrow {
+  opacity: 1;
+  transform: translateX(0);
+  color: var(--accent-2);
+}
+
+.action-card-title {
+  display: block;
+  font-weight: 600;
+  font-size: 12.5px;
+  color: var(--text-0);
+}
+
+.action-card-desc {
+  display: block;
+  font-size: 10.5px;
+  color: var(--text-2);
+}
+
 @keyframes card-in {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(10px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes card-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .action-card-inner { animation: none; }
 }
 
 .face-stage {
@@ -447,6 +540,45 @@ button {
     radial-gradient(1.5px 1.5px at 68% 92%, #fff, transparent 60%),
     radial-gradient(1.5px 1.5px at 22% 86%, var(--ring-c1), transparent 60%);
   animation: sparkle-twinkle 3.2s ease-in-out infinite;
+}
+
+/* Particulas ambientales muy discretas alrededor del rostro - dan
+   sensacion de espacio/vida sin competir con la cara (que sigue siendo
+   el elemento principal). Puramente decorativo, igual que el halo. */
+.face-particles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.face-particles span {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--accent-2);
+  box-shadow: 0 0 6px 1px var(--accent-2);
+  opacity: 0;
+  animation: particle-drift 9s ease-in-out infinite;
+}
+
+.face-particles span:nth-child(1) { top: 18%; left: 28%; animation-delay: 0s; }
+.face-particles span:nth-child(2) { top: 12%; left: 68%; animation-delay: 1.3s; background: var(--accent); box-shadow: 0 0 6px 1px var(--accent); }
+.face-particles span:nth-child(3) { top: 68%; left: 20%; animation-delay: 2.6s; }
+.face-particles span:nth-child(4) { top: 78%; left: 74%; animation-delay: 3.9s; background: var(--accent); box-shadow: 0 0 6px 1px var(--accent); }
+.face-particles span:nth-child(5) { top: 42%; left: 12%; animation-delay: 5.2s; }
+.face-particles span:nth-child(6) { top: 36%; left: 86%; animation-delay: 6.5s; }
+
+@keyframes particle-drift {
+  0%, 100% { opacity: 0; transform: translateY(0) scale(0.8); }
+  15% { opacity: 0.8; }
+  50% { opacity: 0.5; transform: translateY(-18px) scale(1); }
+  85% { opacity: 0.8; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .face-particles { display: none; }
 }
 
 body[data-atlas-state="escuchando"] .face-halo,
@@ -635,6 +767,11 @@ body[data-atlas-state="escuchando"] .card-rail {
 #mic-button {
   background: rgba(255, 255, 255, 0.06);
   color: var(--text-0);
+  box-shadow: inset 0 0 0 1px rgba(126, 232, 250, 0.25);
+}
+
+#mic-button:hover {
+  box-shadow: inset 0 0 0 1px rgba(126, 232, 250, 0.25), 0 0 12px -2px var(--accent-2);
 }
 
 #mic-button.recording {

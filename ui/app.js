@@ -45,19 +45,29 @@ function primeInput(text) {
 
 const CARD_SETS = {
   general: [
-    { icon: "magnifying-glass", label: "Investigar", run: () => primeInput("Investiga sobre ") },
-    { icon: "folder-simple", label: "Organizar archivos", run: () => primeInput("Ayúdame a organizar la carpeta ") },
-    { icon: "code", label: "Programar", run: () => renderCards("code") },
-    { icon: "file-text", label: "Crear documento", run: () => primeInput("Crea un archivo con ") },
-    { icon: "globe", label: "Buscar en internet", run: () => primeInput("Busca en internet ") },
+    { key: "investigar", icon: "magnifying-glass", label: "Investigar", desc: "Busca y analiza información", run: () => primeInput("Investiga sobre ") },
+    { key: "organizar", icon: "folder-simple", label: "Organizar archivos", desc: "Gestiona tus archivos", run: () => primeInput("Ayúdame a organizar la carpeta ") },
+    { key: "programar", icon: "code", label: "Programar", desc: "Crea y depura código", run: () => renderCards("code") },
+    { key: "documento", icon: "file-text", label: "Crear documento", desc: "Redacta y genera archivos", run: () => primeInput("Crea un archivo con ") },
+    { key: "internet", icon: "globe", label: "Buscar en internet", desc: "Explora la web en vivo", run: () => primeInput("Busca en internet ") },
   ],
   code: [
-    { icon: "magnifying-glass", label: "Analizar código", run: () => primeInput("Lee y analiza el archivo ") },
-    { icon: "bug", label: "Buscar errores", run: () => primeInput("Ejecuta y revisa si hay errores en ") },
-    { icon: "wrench", label: "Corregir", run: () => primeInput("Corrige el problema en ") },
-    { icon: "play", label: "Ejecutar", run: () => primeInput("Ejecuta el comando ") },
-    { icon: "arrow-left", label: "Volver", run: () => renderCards("general") },
+    { key: "analizar", icon: "magnifying-glass", label: "Analizar código", desc: "Lee y revisa el archivo", run: () => primeInput("Lee y analiza el archivo ") },
+    { key: "errores", icon: "bug", label: "Buscar errores", desc: "Detecta fallos reales", run: () => primeInput("Ejecuta y revisa si hay errores en ") },
+    { key: "corregir", icon: "wrench", label: "Corregir", desc: "Aplica una solución", run: () => primeInput("Corrige el problema en ") },
+    { key: "ejecutar", icon: "play", label: "Ejecutar", desc: "Corre un comando", run: () => primeInput("Ejecuta el comando ") },
+    { key: "volver", icon: "arrow-left", label: "Volver", desc: "Vuelve al menú principal", run: () => renderCards("general") },
   ],
+};
+
+// Que tarjeta se ilumina cuando Atlas usa una herramienta real - solo se
+// mapean los casos donde la relacion es honesta (1 a 1), no se inventan
+// conexiones para herramientas que no calzan con ninguna tarjeta.
+const TOOL_TO_CARD = {
+  web_search: "internet",
+  write_file: "documento",
+  list_directory: "organizar",
+  read_file: "analizar",
 };
 
 function renderCards(setName) {
@@ -68,8 +78,19 @@ function renderCards(setName) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "action-card";
-    btn.style.animationDelay = `${i * 0.05}s`;
-    btn.innerHTML = `<span class="icon">${icon(card.icon)}</span><span>${card.label}</span>`;
+    btn.dataset.cardKey = card.key;
+    btn.style.animationDelay = `${i * 0.06}s`;
+    btn.style.setProperty("--float-delay", `${(i % 4) * -1.4}s`);
+    btn.style.setProperty("--float-duration", `${6 + (i % 3)}s`);
+    btn.innerHTML = `
+      <span class="action-card-inner">
+        <span class="action-card-top">
+          <span class="icon">${icon(card.icon)}</span>
+          <span class="action-card-arrow">${icon("arrow-right")}</span>
+        </span>
+        <span class="action-card-title">${card.label}</span>
+        <span class="action-card-desc">${card.desc}</span>
+      </span>`;
     btn.addEventListener("click", card.run);
     (i % 2 === 0 ? cardsLeft : cardsRight).appendChild(btn);
   });
@@ -196,17 +217,26 @@ function completePlanStep(id, denied) {
 // de la pantalla es del turno actual, no un historial acumulado.
 form.addEventListener("submit", () => clearPlan(), true);
 
+function highlightCard(cardKey) {
+  document.querySelectorAll(".action-card").forEach((btn) => {
+    btn.classList.toggle("active-tool", !!cardKey && btn.dataset.cardKey === cardKey);
+    btn.classList.toggle("dimmed", !!cardKey && btn.dataset.cardKey !== cardKey);
+  });
+}
+
 window.addEventListener("atlas:tool", (e) => {
   const d = e.detail;
   if (d.phase === "call") {
     addActivityEntry("wrench", d.name);
     addPlanStep(d.id, d.name);
     setAgentActivity(`Atlas — usando ${d.name}`);
+    highlightCard(TOOL_TO_CARD[d.name]);
   } else if (d.phase === "confirm") {
     addActivityEntry("warning", `${d.name} — esperando autorización`, "pending");
   } else if (d.phase === "result") {
     addActivityEntry(d.denied ? "x" : "check-circle", d.name, d.denied ? "denied" : "done");
     completePlanStep(d.id, d.denied);
     setAgentActivity(null);
+    highlightCard(null);
   }
 });
