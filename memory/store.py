@@ -87,6 +87,10 @@ def list_notes() -> list[Note]:
     return [_parse_note(p) for p in sorted(VAULT_DIR.glob("*.md"))]
 
 
+def list_notes_by_tag(tag: str) -> list[Note]:
+    return [n for n in list_notes() if tag in n.tags]
+
+
 STEM_MIN_LENGTH = 5
 
 

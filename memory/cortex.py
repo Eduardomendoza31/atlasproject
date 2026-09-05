@@ -1,6 +1,8 @@
 from core.providers import complete
 from memory.semantic import semantic_search
-from memory.store import save_note, search_notes
+from memory.store import list_notes_by_tag, save_note, search_notes
+
+RULE_TAG = "regla"
 
 SAVE_DECISION_PROMPT = """Estas leyendo un turno de una conversacion entre un
 usuario y Atlas, su asistente personal.
@@ -28,21 +30,38 @@ CONTENIDO: <la nota en 1-3 frases, basada solo en lo que dijo el usuario>"""
 
 
 async def relevant_context(user_text: str) -> str:
-    """Busca en el vault notas relacionadas con lo que el usuario acaba de
-    decir (por significado, no por palabra exacta) y arma un bloque de
-    texto para inyectar como contexto. Si la busqueda semantica falla
+    """Arma el bloque de memoria a inyectar en el turno: las reglas que
+    el usuario pidio recordar SIEMPRE van (no dependen de si el mensaje
+    actual se parece semanticamente a ellas - una regla como "los PDF
+    van a Documentacion" debe aplicar aunque el usuario no diga "PDF"),
+    mas las notas relacionadas con lo que acaba de decir (por
+    significado, no por palabra exacta). Si la busqueda semantica falla
     (p. ej. la API de embeddings no responde), cae a busqueda por
     palabras en vez de dejar al modelo sin nada."""
+    rules = list_notes_by_tag(RULE_TAG)
     try:
         notes = await semantic_search(user_text)
     except Exception as exc:
         print(f"[Cortex] Fallo la busqueda semantica, uso palabras: {exc}", flush=True)
         notes = search_notes(user_text)
 
-    if not notes:
-        return ""
-    lines = [f"- {note.title}: {note.content}" for note in notes]
-    return "Memoria relevante de conversaciones pasadas:\n" + "\n".join(lines)
+    # Las reglas ya van en su propia seccion - no duplicarlas si tambien
+    # salieron en la busqueda semantica.
+    rule_paths = {r.path for r in rules}
+    notes = [n for n in notes if n.path not in rule_paths]
+
+    blocks = []
+    if rules:
+        rule_lines = [f"- {r.title}: {r.content}" for r in rules]
+        blocks.append(
+            "Reglas que el usuario pidió que sigas siempre (aplican aunque "
+            "no parezcan relacionadas con el mensaje actual):\n" + "\n".join(rule_lines)
+        )
+    if notes:
+        note_lines = [f"- {n.title}: {n.content}" for n in notes]
+        blocks.append("Memoria relevante de conversaciones pasadas:\n" + "\n".join(note_lines))
+
+    return "\n\n".join(blocks)
 
 
 async def maybe_save(user_text: str, assistant_text: str) -> str | None:
