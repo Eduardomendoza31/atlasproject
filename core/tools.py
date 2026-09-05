@@ -67,7 +67,7 @@ def all_tool_schemas() -> list[dict]:
     ]
 
 
-def _resolve_path(raw: str) -> Path:
+def resolve_path(raw: str) -> Path:
     """Rutas relativas se resuelven contra la carpeta personal del
     usuario (no la carpeta del proyecto) - es la base mas util para un
     asistente que opera sobre "el PC" en general, no solo sobre si
@@ -82,7 +82,7 @@ def _resolve_path(raw: str) -> Path:
 
 async def _exec_read_file(arguments: dict) -> str:
     raw_path = arguments["path"]
-    path = _resolve_path(raw_path)
+    path = resolve_path(raw_path)
     try:
         data = path.read_bytes()
     except FileNotFoundError:
@@ -105,7 +105,7 @@ async def _exec_read_file(arguments: dict) -> str:
 
 async def _exec_list_directory(arguments: dict) -> str:
     raw_path = arguments.get("path") or "."
-    path = _resolve_path(raw_path)
+    path = resolve_path(raw_path)
     if not path.exists():
         return f"Error: la carpeta '{raw_path}' no existe."
     if not path.is_dir():
@@ -125,7 +125,7 @@ async def _exec_list_directory(arguments: dict) -> str:
 
 async def _exec_write_file(arguments: dict) -> str:
     raw_path = arguments["path"]
-    path = _resolve_path(raw_path)
+    path = resolve_path(raw_path)
     content = arguments.get("content", "")
     encoded = content.encode("utf-8")
     if len(encoded) > WRITE_FILE_MAX_BYTES:

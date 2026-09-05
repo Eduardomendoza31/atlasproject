@@ -66,6 +66,10 @@ const CARD_SETS = {
 const TOOL_TO_CARD = {
   web_search: "internet",
   write_file: "documento",
+  create_word_document: "documento",
+  create_excel_document: "documento",
+  create_pdf_document: "documento",
+  create_powerpoint_document: "documento",
   list_directory: "organizar",
   read_file: "analizar",
 };
