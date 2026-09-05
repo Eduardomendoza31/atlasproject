@@ -8,7 +8,7 @@ window.FACE_MANIFEST = {
     "x": 268,
     "y": 775,
     "w": 488,
-    "h": 221
+    "h": 324
   },
   "mouth_shapes": {
     "closed": "assets/face/mouth/closed.png",

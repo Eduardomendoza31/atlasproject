@@ -44,10 +44,20 @@ RIGHT_CORNER = 291
 # bloque deslizandose.
 MOUTH_SHAPES = {
     "closed": (0.0, 0.0, 0.0, 0.0),
-    "half_open": (0.18, 0.05, 0.0, 0.06),
-    "open": (0.42, 0.08, 0.0, 0.16),
-    "rounded": (0.22, 0.06, 0.15, 0.08),
+    "half_open": (0.18, 0.05, 0.0, 0.10),
+    "open": (0.42, 0.08, 0.0, 0.24),
+    "rounded": (0.22, 0.06, 0.15, 0.14),
 }
+
+# Esta imagen base es una placa mecanica con forma de mandibula, no piel
+# real. La piel de la barbilla termina y empieza la placa rigida a
+# ~0.86x el alto de labio por debajo del labio inferior (medido a mano
+# en esta foto); la placa sigue siendo visible/util para el recorte
+# hasta ~1.9x mas abajo, antes de que empiecen los cables oscuros del
+# cuello. Si se cambia la foto base, hay que volver a medir esto.
+PLATE_SEAM_FRAC = 0.86
+PLATE_REACH_FRAC = 1.9
+
 
 def _lip_indices() -> list[int]:
     idx = set()
@@ -55,30 +65,6 @@ def _lip_indices() -> list[int]:
         idx.add(a)
         idx.add(b)
     return sorted(idx)
-
-
-def _jaw_taper_points(lip_points: np.ndarray, corners: np.ndarray) -> np.ndarray:
-    """Puntos sinteticos de caida de menton, no landmarks detectados.
-
-    Se probo usar el ovalo de cara de mediapipe para esto, pero en esta
-    imagen (una placa mecanica con forma de mandibula, no piel real) esos
-    puntos caen sobre el borde de la placa rigida (hasta ~90px mas abajo
-    de donde termina la piel real), y deformarlos con TPS distorsiona esa
-    geometria dura de forma inestable - se nota como una linea/artefacto
-    en el cuello, sobre todo con la boca bien abierta. En vez de eso, se
-    ponen 3 puntos propios, a una profundidad fija (proporcional al alto
-    de labio) que se queda dentro de la piel de la barbilla, antes de la
-    costura con la placa."""
-    mouth_bottom_y = float(lip_points[:, 1].max())
-    lip_h = mouth_bottom_y - float(lip_points[:, 1].min())
-    left_x, right_x = float(corners[0, 0]), float(corners[1, 0])
-    center_x = (left_x + right_x) / 2.0
-    depth_center = mouth_bottom_y + 0.55 * lip_h
-    depth_side = mouth_bottom_y + 0.35 * lip_h
-    return np.array(
-        [(left_x, depth_side), (center_x, depth_center), (right_x, depth_side)],
-        dtype=np.float32,
-    )
 
 
 def _eye_indices() -> tuple[list[int], list[int]]:
@@ -112,13 +98,11 @@ def _detect_face_points(image_bgr: np.ndarray):
     lip_points = np.array([pt(i) for i in _lip_indices()], dtype=np.float32)
     corners = np.array([pt(LEFT_CORNER), pt(RIGHT_CORNER)], dtype=np.float32)
 
-    jaw_points = _jaw_taper_points(lip_points, corners)
-
     left_idx, right_idx = _eye_indices()
     left_eye = np.array([pt(i) for i in left_idx], dtype=np.float32)
     right_eye = np.array([pt(i) for i in right_idx], dtype=np.float32)
 
-    return lip_points, corners, jaw_points, left_eye, right_eye
+    return lip_points, corners, left_eye, right_eye
 
 
 def _bbox_from_points(
@@ -172,29 +156,36 @@ def _paint_gap(
     def _blend(base: np.ndarray, poly: np.ndarray, color: tuple, blur: int) -> np.ndarray:
         mask = np.zeros(base.shape[:2], dtype=np.uint8)
         cv2.fillPoly(mask, [poly], 255)
-        mask = cv2.GaussianBlur(mask, (blur, blur), 0)
+        if blur:
+            mask = cv2.GaussianBlur(mask, (blur, blur), 0)
         mask3 = (cv2.merge([mask, mask, mask]).astype(np.float32)) / 255.0
         fill = np.full_like(base, color)
         return (fill.astype(np.float32) * mask3 + base.astype(np.float32) * (1 - mask3))
 
     out = _blend(img, _poly(upper_ys, lower_ys), (22, 20, 24), 5)  # BGR: cavidad oscura neutra
-    out = _blend(out, _poly(upper_ys, teeth_ys), (200, 206, 214), 3)  # BGR: dientes
     out = out.astype(np.uint8)
 
-    # separaciones finas entre dientes - sin esto la franja clara se ve
-    # como una barra solida pintada, no como dientes individuales.
-    n_teeth = 7
-    for i in range(1, n_teeth):
-        frac = i / n_teeth
-        x = left_x + (right_x - left_x) * frac
-        top_y = float(np.interp(frac, t, upper_ys))
-        bottom_y = float(np.interp(frac, t, teeth_ys))
-        if bottom_y - top_y < 2:
+    # Dientes individuales, no una franja solida: se dibujan como bloques
+    # separados por huecos reales (color de cavidad), sin blur. Una raya
+    # divisoria fina de un solo pixel desaparece al reescalar la imagen
+    # al tamano final del sprite en la UI (~0.2x) - un hueco con ancho de
+    # verdad sobrevive esa reduccion.
+    n_teeth = 6
+    gap_frac = 0.16
+    for i in range(n_teeth):
+        f0 = i / n_teeth + gap_frac / (2 * n_teeth)
+        f1 = (i + 1) / n_teeth - gap_frac / (2 * n_teeth)
+        top0, top1 = np.interp([f0, f1], t, upper_ys)
+        bot0, bot1 = np.interp([f0, f1], t, teeth_ys)
+        if min(bot0 - top0, bot1 - top1) < 2:
             continue
-        cv2.line(
-            out, (int(x), int(top_y) + 1), (int(x), int(bottom_y)),
-            (160, 165, 172), 1, cv2.LINE_AA,
+        x0 = left_x + (right_x - left_x) * f0
+        x1 = left_x + (right_x - left_x) * f1
+        tooth_poly = np.array(
+            [[x0, top0], [x1, top1], [x1, bot1], [x0, bot0]], dtype=np.int32
         )
+        cv2.fillConvexPoly(out, tooth_poly, (200, 206, 214))  # BGR: dientes
+
     return out
 
 
@@ -211,6 +202,37 @@ def _paint_lid_line(img: np.ndarray, left_x: float, right_x: float, y: float) ->
     pts = np.stack([xs, ys], axis=1).astype(np.int32)
     cv2.polylines(overlay, [pts], False, (45, 35, 35), 1, cv2.LINE_AA)
     return cv2.addWeighted(overlay, 0.5, img, 0.5, 0)
+
+
+def _shift_plate_down(crop: np.ndarray, warped: np.ndarray, plate_y: int, shift_px: int) -> np.ndarray:
+    """Desliza en bloque (sin deformarla) la placa mecanica del menton
+    hacia abajo, tomando los pixeles originales sin warp - para simular
+    la caida de mandibula sin alabear su geometria rigida (bordes
+    rectos, tornillos). Deformar esa zona con el mismo TPS de los labios
+    (como se hizo antes) la distorsionaba de forma inestable y se notaba
+    como una linea/artefacto en el cuello, sobre todo con la boca bien
+    abierta."""
+    h, w = crop.shape[:2]
+    plate_y = max(1, min(plate_y, h - 1))
+    shift_px = max(0, min(shift_px, h - plate_y - 1))
+    if shift_px <= 0:
+        return warped
+
+    out = warped.copy()
+    out[plate_y + shift_px :, :] = crop[plate_y : h - shift_px, :]
+
+    # El hueco que deja el desplazamiento se rellena ESTIRANDO (no
+    # repitiendo) una ventana de pixeles originales alrededor de la
+    # costura - repetir una sola fila deja un salto duro de textura
+    # justo donde empieza/termina el relleno.
+    window = 4
+    y0 = max(0, plate_y - window)
+    y1 = min(h, plate_y + window)
+    stretched = cv2.resize(
+        crop[y0:y1, :], (w, (y1 - y0) + shift_px), interpolation=cv2.INTER_LINEAR
+    )
+    out[y0 : y0 + stretched.shape[0], :] = stretched
+    return out
 
 
 def _tps_warp(crop: np.ndarray, src: np.ndarray, dst: np.ndarray) -> np.ndarray:
@@ -235,7 +257,7 @@ def _warp_mouth(
     crop: np.ndarray,
     points_local: np.ndarray,
     corners_local: np.ndarray,
-    jaw_local: np.ndarray,
+    plate_y_local: int,
     center_y: float,
     mouth_w: float,
     mouth_h: float,
@@ -268,20 +290,12 @@ def _warp_mouth(
             dx = (center_x - src[i, 0]) * dx_corner_frac
             dst[i, 0] += dx
 
-    jaw_src = jaw_local.copy()
-    jaw_dst = jaw_local.copy()
-    if dy_jaw_frac and len(jaw_local):
-        # El menton (centro del arco) baja mas que los extremos cerca de
-        # las comisuras, para que se vea como una rotacion de mandibula
-        # en vez de un bloque completo deslizandose hacia abajo.
-        half_w = float(np.max(np.abs(jaw_local[:, 0] - center_x))) or 1.0
-        weight = 1.0 - 0.5 * np.clip(np.abs(jaw_src[:, 0] - center_x) / half_w, 0, 1)
-        jaw_dst[:, 1] += dy_jaw_frac * mouth_h * weight
-
-    src = np.vstack([src, jaw_src]) if len(jaw_src) else src
-    dst = np.vstack([dst, jaw_dst]) if len(jaw_dst) else dst
-
     warped = _tps_warp(crop, src, dst)
+
+    if dy_jaw_frac:
+        warped = _shift_plate_down(
+            crop, warped, plate_y_local, int(round(dy_jaw_frac * mouth_h))
+        )
 
     left_x, right_x = float(corners_local[0, 0]), float(corners_local[1, 0])
     warped = _paint_gap(
@@ -331,39 +345,35 @@ def generate() -> None:
         raise RuntimeError(f"No pude leer la imagen base: {base_path}")
     h, w = image.shape[:2]
 
-    lip_points, corners, jaw_points, left_eye, right_eye = _detect_face_points(image)
+    lip_points, corners, left_eye, right_eye = _detect_face_points(image)
 
     # --- Boca + mandibula ---
     lip_w = float(lip_points[:, 0].max() - lip_points[:, 0].min())
     lip_h = float(lip_points[:, 1].max() - lip_points[:, 1].min())
-    mouth_points = np.vstack([lip_points, jaw_points]) if len(jaw_points) else lip_points
-    # pad_bottom apenas lo justo para dejar respiro bajo el menton - si
-    # llega hasta el anillo mecanico del cuello, cualquier desajuste de
-    # subpixel entre el overlay y la foto de fondo se nota como una linea
-    # doble sobre esos bordes duros (con piel de la barbilla, en cambio,
-    # no se nota).
+    mouth_bottom_y = float(lip_points[:, 1].max())
+    # el recorte llega hasta bien dentro de la placa (PLATE_REACH_FRAC),
+    # pero solo la piel de labio/menton (hasta PLATE_SEAM_FRAC) se
+    # deforma con TPS - la placa se desliza en bloque, ver
+    # _shift_plate_down.
     bx, by, bw, bh = _bbox_from_points(
-        mouth_points, (h, w), pad_x=lip_w * 0.6, pad_top=lip_h * 0.9, pad_bottom=lip_h * 0.15
+        lip_points, (h, w), pad_x=lip_w * 0.6, pad_top=lip_h * 0.9,
+        pad_bottom=PLATE_REACH_FRAC * lip_h,
     )
     mouth_crop = image[by : by + bh, bx : bx + bw]
 
     points_local = lip_points - np.array([bx, by], dtype=np.float32)
     corners_local = corners - np.array([bx, by], dtype=np.float32)
-    jaw_local = (
-        jaw_points - np.array([bx, by], dtype=np.float32)
-        if len(jaw_points)
-        else jaw_points
-    )
     center_y = float(np.mean(corners_local[:, 1]))
     x0, y0 = points_local.min(axis=0)
     x1, y1 = points_local.max(axis=0)
     mouth_w, mouth_h = float(x1 - x0), float(y1 - y0)
+    plate_y_local = int(round((mouth_bottom_y + PLATE_SEAM_FRAC * lip_h) - by))
 
     MOUTH_OUT_DIR.mkdir(parents=True, exist_ok=True)
     mouth_shapes: dict[str, str] = {}
     for name, (dy_lower, dy_upper, dx_corner, dy_jaw) in MOUTH_SHAPES.items():
         warped = _warp_mouth(
-            mouth_crop, points_local, corners_local, jaw_local, center_y, mouth_w, mouth_h,
+            mouth_crop, points_local, corners_local, plate_y_local, center_y, mouth_w, mouth_h,
             dy_lower, dy_upper, dx_corner, dy_jaw,
         )
         out_path = MOUTH_OUT_DIR / f"{name}.png"
