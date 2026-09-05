@@ -305,20 +305,39 @@ const META_TOOLS = new Set(["announce_plan", "report_outcome"]);
 // a pedir la lista real en vez de dejar el panel desactualizado.
 const AUTOMATION_TOOLS = new Set(["create_automation", "delete_automation", "set_automation_enabled"]);
 
+// Mientras un agente especializado esta trabajando (delegate_to_agent),
+// sus propias llamadas a herramientas no deben pisar el cartel de
+// "Agentes activos" que ya muestra su nombre - siguen apareciendo en el
+// log de Actividad reciente igual, para no perder transparencia.
+let activeSubagent = null;
+
+window.addEventListener("atlas:subagent", (e) => {
+  const d = e.detail;
+  if (d.phase === "start") {
+    activeSubagent = d.agent;
+    addActivityEntry("compass", `Delegado en ${d.agent}`);
+    setAgentActivity(`${d.agent} — trabajando`);
+  } else {
+    activeSubagent = null;
+    addActivityEntry("check-circle", `${d.agent} completó su tarea`, "done");
+    setAgentActivity(null);
+  }
+});
+
 window.addEventListener("atlas:tool", (e) => {
   const d = e.detail;
   if (d.phase === "call") {
     if (d.name === "announce_plan") {
       addActivityEntry("compass", "Atlas anunció un plan");
-      setAgentActivity("Atlas — planificando");
+      if (!activeSubagent) setAgentActivity("Atlas — planificando");
     } else if (d.name === "report_outcome") {
       const ok = d.arguments && d.arguments.success;
       addActivityEntry(ok ? "check-circle" : "warning", "Atlas informó el resultado", ok ? "done" : "pending");
-      setAgentActivity(null);
+      if (!activeSubagent) setAgentActivity(null);
     } else {
       addActivityEntry("wrench", d.name);
       addPlanStep(d.id, d.name);
-      setAgentActivity(`Atlas — usando ${d.name}`);
+      if (!activeSubagent) setAgentActivity(`Atlas — usando ${d.name}`);
       highlightCard(TOOL_TO_CARD[d.name]);
     }
   } else if (d.phase === "confirm") {
@@ -327,7 +346,7 @@ window.addEventListener("atlas:tool", (e) => {
     if (!META_TOOLS.has(d.name)) {
       addActivityEntry(d.denied ? "x" : "check-circle", d.name, d.denied ? "denied" : "done");
       completePlanStep(d.id, d.denied);
-      setAgentActivity(null);
+      if (!activeSubagent) setAgentActivity(null);
       highlightCard(null);
     }
     if (!d.denied && AUTOMATION_TOOLS.has(d.name)) {

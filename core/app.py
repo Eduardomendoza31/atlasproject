@@ -9,6 +9,7 @@ from core.agent import run_agent_turn
 from core.automations import list_automations, scheduler_loop
 from core.config import USER_NAME
 from core.skills import installed_skills, load_all as load_skills
+from core.subagents import list_subagents
 from core.tools import RUN_COMMAND_UI_OUTPUT_CAP, Tool
 from core.voice import synthesize, transcribe
 from memory.cortex import maybe_save, relevant_context
@@ -125,7 +126,17 @@ def build_system_prompt() -> str:
         "5) Informar: al terminar una tarea de varios pasos, llama a "
         "report_outcome con un resumen honesto - marca verified=true solo "
         "si de verdad comprobaste el resultado, y success=false si no se "
-        "logro o no pudiste verificarlo, en vez de aparentar que salio bien."
+        "logro o no pudiste verificarlo, en vez de aparentar que salio bien.\n\n"
+        "Sobre delegar en agentes especializados: para una tarea completa y "
+        "bien definida que calce claramente con un especialista (una tarea "
+        "de codigo, una investigacion, crear un documento, organizar "
+        "archivos), podes usar delegate_to_agent en vez de resolverla vos "
+        "mismo paso a paso - le pasas la tarea completa con todo el "
+        "contexto que necesite (el agente delegado NO ve el resto de esta "
+        "conversacion) y te devuelve un resultado que le comunicas al "
+        "usuario. No delegues para algo simple que resolverias en un par de "
+        "llamadas a tus propias herramientas - eso hazlo directo, sin "
+        "delegar."
     )
 
 
@@ -140,6 +151,16 @@ async def list_skills():
         "skills": [
             {"name": s.name, "description": s.description}
             for s in installed_skills()
+        ]
+    }
+
+
+@app.get("/agents")
+async def get_agents():
+    return {
+        "agents": [
+            {"key": a.key, "name": a.name, "description": a.description}
+            for a in list_subagents()
         ]
     }
 
@@ -223,6 +244,22 @@ async def _run_turn(
                     "name": event["name"],
                     "result": result,
                     "denied": event["denied"],
+                })
+            elif etype == "subagent_call":
+                await websocket.send_json({
+                    "type": "subagent_call",
+                    "id": event["id"],
+                    "agent": event["agent"],
+                    "agent_name": event["agent_name"],
+                    "task": event["task"],
+                })
+            elif etype == "subagent_result":
+                await websocket.send_json({
+                    "type": "subagent_result",
+                    "id": event["id"],
+                    "agent": event["agent"],
+                    "agent_name": event["agent_name"],
+                    "result": event["result"],
                 })
             elif etype == "turn_done":
                 reply_text = event["final_text"]

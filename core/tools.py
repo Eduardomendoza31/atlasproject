@@ -52,8 +52,13 @@ def get_tool(name: str) -> Tool | None:
     return TOOLS.get(name)
 
 
-def all_tool_schemas() -> list[dict]:
-    """El formato `tools=` que espera litellm (compatible OpenAI)."""
+def all_tool_schemas(allowed: list[str] | None = None) -> list[dict]:
+    """El formato `tools=` que espera litellm (compatible OpenAI).
+
+    `allowed`, si se da, restringe el esquema a esos nombres - lo usan
+    los agentes especializados (ver core/subagents.py) para ver solo las
+    herramientas de su dominio en vez de las de todo Atlas."""
+    tools = TOOLS.values() if allowed is None else (TOOLS[n] for n in allowed if n in TOOLS)
     return [
         {
             "type": "function",
@@ -63,7 +68,7 @@ def all_tool_schemas() -> list[dict]:
                 "parameters": t.parameters,
             },
         }
-        for t in TOOLS.values()
+        for t in tools
     ]
 
 

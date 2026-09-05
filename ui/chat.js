@@ -196,6 +196,15 @@ function connect() {
         denied: data.denied,
       });
       setAtlasState("ejecutando");
+    } else if (data.type === "subagent_call") {
+      clearTyping();
+      addMessage(`🤖 Atlas delega en ${data.agent_name}: ${data.task}`, "atlas subagent-call");
+      window.dispatchEvent(new CustomEvent("atlas:subagent", { detail: { phase: "start", agent: data.agent_name } }));
+      setAtlasState("ejecutando");
+    } else if (data.type === "subagent_result") {
+      addMessage(`${data.agent_name} completó su tarea: ${data.result}`, "atlas subagent-result");
+      window.dispatchEvent(new CustomEvent("atlas:subagent", { detail: { phase: "done", agent: data.agent_name } }));
+      setAtlasState("ejecutando");
     } else if (data.type === "stopped") {
       clearTyping();
       atlasBubble = null;
