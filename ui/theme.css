@@ -378,33 +378,95 @@ button {
   overflow: hidden;
 }
 
+/* Halo radiante detras del rostro: un resplandor difuso de dos tonos
+   (violeta + cian, como pide Eduardo con la imagen de referencia) mas
+   un anillo fino y brillante encima. Siempre visible (es identidad
+   visual de Atlas), y cambia de color/velocidad segun el estado real
+   de la conversacion. */
 .face-halo {
   position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 320px;
-  height: 320px;
+  width: 460px;
+  height: 460px;
   border-radius: 50%;
-  /* En reposo, sin color propio: el fondo debe leerse exactamente igual
-     que el resto de la pagina (mismo #05060c), no como una mancha violeta
-     detras del rostro. Solo toma color cuando Atlas esta activo (reglas
-     de abajo), como señal de estado real, no como decoracion fija. */
-  background: transparent;
-  filter: blur(2px);
+  /* Tiene que ser bastante mas grande que #face-wrap (260x390) en las
+     dos dimensiones - si no, el aro/resplandor queda casi enteramente
+     debajo de la cabeza y no se ve nada (nos paso: probamos 340px y
+     era invisible en la practica, solo se notaba con un color de
+     prueba solido). */
+  background: radial-gradient(circle, rgba(109, 93, 240, 0.4) 0%, rgba(126, 232, 250, 0.18) 45%, transparent 72%);
+  filter: blur(18px);
   animation: halo-breathe 4s ease-in-out infinite;
   pointer-events: none;
-  transition: background 0.3s ease;
+  transition: background 0.4s ease;
+}
+
+.face-ring {
+  /* Las variables de color/velocidad viven ACA (no en .face-halo): son
+     dos elementos hermanos, no padre-hijo, y las custom properties de
+     CSS solo se heredan hacia abajo en el DOM. Definirlas en el
+     elemento equivocado hizo que var(--ring-c1) nunca resolviera y por
+     eso el aro entero desaparecia (background invalido -> "none"). */
+  --ring-c1: #6d5df0;
+  --ring-c2: #7ee8fa;
+  --ring-speed: 16s;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 404px;
+  height: 404px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.face-ring::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  padding: 2px;
+  background: conic-gradient(from 0deg, var(--ring-c1), var(--ring-c2), var(--ring-c1) 55%, #b98bf0, var(--ring-c1));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  filter: drop-shadow(0 0 8px var(--ring-c2)) drop-shadow(0 0 22px var(--ring-c1));
+  animation: ring-spin var(--ring-speed) linear infinite;
+}
+
+.face-ring::after {
+  content: "";
+  position: absolute;
+  inset: -20px;
+  border-radius: 50%;
+  background:
+    radial-gradient(2px 2px at 12% 22%, #fff, transparent 60%),
+    radial-gradient(2px 2px at 88% 28%, var(--ring-c2), transparent 60%),
+    radial-gradient(1.5px 1.5px at 68% 92%, #fff, transparent 60%),
+    radial-gradient(1.5px 1.5px at 22% 86%, var(--ring-c1), transparent 60%);
+  animation: sparkle-twinkle 3.2s ease-in-out infinite;
 }
 
 body[data-atlas-state="escuchando"] .face-halo,
 body[data-atlas-state="hablando"] .face-halo {
   animation-duration: 1.2s;
-  background: radial-gradient(circle, rgba(126, 232, 250, 0.45) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(126, 232, 250, 0.5) 0%, rgba(109, 93, 240, 0.2) 45%, transparent 72%);
+}
+
+body[data-atlas-state="escuchando"] .face-ring,
+body[data-atlas-state="hablando"] .face-ring {
+  --ring-speed: 3s;
 }
 
 body[data-atlas-state="autorizacion"] .face-halo {
-  background: radial-gradient(circle, rgba(245, 196, 81, 0.4) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(245, 196, 81, 0.45) 0%, rgba(245, 196, 81, 0.12) 45%, transparent 72%);
+}
+
+body[data-atlas-state="autorizacion"] .face-ring {
+  --ring-c1: #f5c451;
+  --ring-c2: #ff9d5c;
 }
 
 body[data-atlas-state="escuchando"] .card-rail {
@@ -413,8 +475,17 @@ body[data-atlas-state="escuchando"] .card-rail {
 }
 
 @keyframes halo-breathe {
-  0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.7; }
+  0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.75; }
   50% { transform: translate(-50%, -50%) scale(1.08); opacity: 1; }
+}
+
+@keyframes ring-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes sparkle-twinkle {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
 }
 
 #face-wrap {
@@ -424,9 +495,12 @@ body[data-atlas-state="escuchando"] .card-rail {
   /* La foto base tiene fondo blanco solido (no transparente) - contra
      el tema oscuro se ve como una tarjeta pegada. Sin tocar la imagen
      ni la logica de face.js, se desvanece POR COMPLETO con una mascara
-     puramente visual para que se funda con el halo de atras. Ojo: una
-     elipse mas chica que esta recorta cabeza/hombros (se ve "cortado");
-     esta ya deja el rostro completo visible sin blanco en las esquinas. */
+     puramente visual para que se funda con el halo/anillo de atras.
+     Ojo: una elipse mas chica que esta recorta cabeza/hombros (se ve
+     "cortado"); este es el que probamos y confirmamos sin nada de
+     blanco (ver commit e5a593e) - no acortar el degradado: un intento
+     de hacerlo mas corto (70%->88%) dejo ver MAS fondo blanco de la
+     foto, no menos, porque la parte opaca de la elipse crece. */
   -webkit-mask-image: radial-gradient(ellipse 55% 65% at 50% 42%, black 45%, transparent 100%);
   mask-image: radial-gradient(ellipse 55% 65% at 50% 42%, black 45%, transparent 100%);
 }
