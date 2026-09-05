@@ -5,10 +5,10 @@ window.FACE_MANIFEST = {
     "h": 1536
   },
   "mouth_bbox": {
-    "x": 219,
+    "x": 268,
     "y": 775,
-    "w": 583,
-    "h": 357
+    "w": 488,
+    "h": 221
   },
   "mouth_shapes": {
     "closed": "assets/face/mouth/closed.png",

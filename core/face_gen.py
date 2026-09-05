@@ -57,12 +57,28 @@ def _lip_indices() -> list[int]:
     return sorted(idx)
 
 
-def _oval_indices() -> list[int]:
-    idx = set()
-    for a, b in mp.solutions.face_mesh.FACEMESH_FACE_OVAL:
-        idx.add(a)
-        idx.add(b)
-    return sorted(idx)
+def _jaw_taper_points(lip_points: np.ndarray, corners: np.ndarray) -> np.ndarray:
+    """Puntos sinteticos de caida de menton, no landmarks detectados.
+
+    Se probo usar el ovalo de cara de mediapipe para esto, pero en esta
+    imagen (una placa mecanica con forma de mandibula, no piel real) esos
+    puntos caen sobre el borde de la placa rigida (hasta ~90px mas abajo
+    de donde termina la piel real), y deformarlos con TPS distorsiona esa
+    geometria dura de forma inestable - se nota como una linea/artefacto
+    en el cuello, sobre todo con la boca bien abierta. En vez de eso, se
+    ponen 3 puntos propios, a una profundidad fija (proporcional al alto
+    de labio) que se queda dentro de la piel de la barbilla, antes de la
+    costura con la placa."""
+    mouth_bottom_y = float(lip_points[:, 1].max())
+    lip_h = mouth_bottom_y - float(lip_points[:, 1].min())
+    left_x, right_x = float(corners[0, 0]), float(corners[1, 0])
+    center_x = (left_x + right_x) / 2.0
+    depth_center = mouth_bottom_y + 0.55 * lip_h
+    depth_side = mouth_bottom_y + 0.35 * lip_h
+    return np.array(
+        [(left_x, depth_side), (center_x, depth_center), (right_x, depth_side)],
+        dtype=np.float32,
+    )
 
 
 def _eye_indices() -> tuple[list[int], list[int]]:
@@ -96,22 +112,7 @@ def _detect_face_points(image_bgr: np.ndarray):
     lip_points = np.array([pt(i) for i in _lip_indices()], dtype=np.float32)
     corners = np.array([pt(LEFT_CORNER), pt(RIGHT_CORNER)], dtype=np.float32)
 
-    # Arco de mandibula/menton: solo los puntos del ovalo de la cara que
-    # caen debajo de la boca y dentro de su ancho (con margen) - así no se
-    # arrastran puntos de las mejillas/orejas, que estarian mas arriba o
-    # muy a los lados.
-    mouth_bottom_y = float(lip_points[:, 1].max())
-    mouth_w = float(corners[1, 0] - corners[0, 0])
-    margin = mouth_w * 0.35
-    jaw_points = np.array(
-        [
-            pt(i)
-            for i in _oval_indices()
-            if pt(i)[1] > mouth_bottom_y
-            and corners[0, 0] - margin <= pt(i)[0] <= corners[1, 0] + margin
-        ],
-        dtype=np.float32,
-    )
+    jaw_points = _jaw_taper_points(lip_points, corners)
 
     left_idx, right_idx = _eye_indices()
     left_eye = np.array([pt(i) for i in left_idx], dtype=np.float32)
@@ -145,12 +146,13 @@ def _paint_gap(
     upper_amt: float,
     lower_amt: float,
 ) -> np.ndarray:
-    """Pinta un hueco oscuro (interior de boca) entre labios separados.
+    """Pinta el interior de boca entre labios separados: una franja clara
+    de "dientes" justo bajo el labio superior, y cavidad oscura debajo.
 
     El warp por si solo solo estira piel/labio existente - no puede
     revelar dientes ni cavidad oral que no estan en la foto. Sin esto,
-    'abrir la boca' se ve como un manchon de piel estirada en vez de una
-    boca abierta."""
+    'abrir la boca' se ve como un hueco liso de un solo color en vez de
+    una boca real."""
     if upper_amt <= 0 and lower_amt <= 0:
         return img
 
@@ -160,18 +162,40 @@ def _paint_gap(
     shape = np.sin(np.pi * t) ** 0.7
     upper_ys = center_y - upper_amt * shape
     lower_ys = center_y + lower_amt * shape
-    upper_pts = np.stack([xs, upper_ys], axis=1)
-    lower_pts = np.stack([xs[::-1], lower_ys[::-1]], axis=1)
-    poly = np.vstack([upper_pts, lower_pts]).astype(np.int32)
+    teeth_ys = upper_ys + 0.32 * (lower_ys - upper_ys)
 
-    fill = np.full_like(img, (35, 25, 55))  # BGR: interior oscuro rojizo
-    mask = np.zeros(img.shape[:2], dtype=np.uint8)
-    cv2.fillPoly(mask, [poly], 255)
-    mask = cv2.GaussianBlur(mask, (5, 5), 0)
-    mask3 = (cv2.merge([mask, mask, mask]).astype(np.float32)) / 255.0
+    def _poly(top_ys: np.ndarray, bottom_ys: np.ndarray) -> np.ndarray:
+        top_pts = np.stack([xs, top_ys], axis=1)
+        bottom_pts = np.stack([xs[::-1], bottom_ys[::-1]], axis=1)
+        return np.vstack([top_pts, bottom_pts]).astype(np.int32)
 
-    blended = (fill.astype(np.float32) * 0.85 + img.astype(np.float32) * 0.15)
-    return (blended * mask3 + img.astype(np.float32) * (1 - mask3)).astype(np.uint8)
+    def _blend(base: np.ndarray, poly: np.ndarray, color: tuple, blur: int) -> np.ndarray:
+        mask = np.zeros(base.shape[:2], dtype=np.uint8)
+        cv2.fillPoly(mask, [poly], 255)
+        mask = cv2.GaussianBlur(mask, (blur, blur), 0)
+        mask3 = (cv2.merge([mask, mask, mask]).astype(np.float32)) / 255.0
+        fill = np.full_like(base, color)
+        return (fill.astype(np.float32) * mask3 + base.astype(np.float32) * (1 - mask3))
+
+    out = _blend(img, _poly(upper_ys, lower_ys), (22, 20, 24), 5)  # BGR: cavidad oscura neutra
+    out = _blend(out, _poly(upper_ys, teeth_ys), (200, 206, 214), 3)  # BGR: dientes
+    out = out.astype(np.uint8)
+
+    # separaciones finas entre dientes - sin esto la franja clara se ve
+    # como una barra solida pintada, no como dientes individuales.
+    n_teeth = 7
+    for i in range(1, n_teeth):
+        frac = i / n_teeth
+        x = left_x + (right_x - left_x) * frac
+        top_y = float(np.interp(frac, t, upper_ys))
+        bottom_y = float(np.interp(frac, t, teeth_ys))
+        if bottom_y - top_y < 2:
+            continue
+        cv2.line(
+            out, (int(x), int(top_y) + 1), (int(x), int(bottom_y)),
+            (160, 165, 172), 1, cv2.LINE_AA,
+        )
+    return out
 
 
 def _paint_lid_line(img: np.ndarray, left_x: float, right_x: float, y: float) -> np.ndarray:
@@ -313,8 +337,13 @@ def generate() -> None:
     lip_w = float(lip_points[:, 0].max() - lip_points[:, 0].min())
     lip_h = float(lip_points[:, 1].max() - lip_points[:, 1].min())
     mouth_points = np.vstack([lip_points, jaw_points]) if len(jaw_points) else lip_points
+    # pad_bottom apenas lo justo para dejar respiro bajo el menton - si
+    # llega hasta el anillo mecanico del cuello, cualquier desajuste de
+    # subpixel entre el overlay y la foto de fondo se nota como una linea
+    # doble sobre esos bordes duros (con piel de la barbilla, en cambio,
+    # no se nota).
     bx, by, bw, bh = _bbox_from_points(
-        mouth_points, (h, w), pad_x=lip_w * 0.6, pad_top=lip_h * 0.9, pad_bottom=lip_h * 0.5
+        mouth_points, (h, w), pad_x=lip_w * 0.6, pad_top=lip_h * 0.9, pad_bottom=lip_h * 0.15
     )
     mouth_crop = image[by : by + bh, bx : bx + bw]
 
