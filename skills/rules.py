@@ -26,9 +26,12 @@ SKILL = {
 
 
 async def _exec_remember_rule(arguments: dict) -> str:
-    title = arguments["title"]
-    rule = arguments["rule"]
-    save_note(title, rule, tags=[RULE_TAG])
+    try:
+        title = arguments["title"]
+        rule = arguments["rule"]
+        save_note(title, rule, tags=[RULE_TAG])
+    except Exception as exc:
+        return f"Error: no pude guardar la regla: {exc}"
     return f"Regla guardada: '{title}' — {rule}"
 
 

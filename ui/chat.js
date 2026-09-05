@@ -17,16 +17,27 @@ let ws = null;
 let atlasBubble = null;
 let typingBubble = null;
 
-// Mismos niveles de riesgo que core/tools.py (duplicado a proposito -
-// son 5 strings constantes, no vale la pena un endpoint solo para esto).
+// Nivel de riesgo de cada herramienta, para el emoji del primer aviso
+// ("Atlas usa: tool(args)") antes de que llegue (si aplica) la burbuja
+// de confirmacion real. Arranca con los 4 basicos como resguardo (por si
+// el fetch todavia no responde cuando llega el primer tool_call) y se
+// completa con la lista real del backend - las skills agregan tools
+// nuevas todo el tiempo (documentos, automatizaciones, vision, etc.) y
+// una lista fija hardcodeada quedaria desactualizada de nuevo.
 const TOOL_TIERS = {
   read_file: "safe",
   list_directory: "safe",
   write_file: "sensitive",
   run_command: "critical",
-  web_search: "safe",
 };
 const TIER_EMOJI = { safe: "🟢", sensitive: "🟡", critical: "🔴" };
+
+fetch("http://127.0.0.1:8731/tools")
+  .then((r) => r.json())
+  .then((data) => {
+    (data.tools || []).forEach((t) => { TOOL_TIERS[t.name] = t.tier; });
+  })
+  .catch(() => {});
 
 let turnInFlight = false;
 let pendingConfirmId = null;

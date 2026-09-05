@@ -19,9 +19,12 @@ SKILL = {
 
 
 async def _exec_get_system_info(_arguments: dict) -> str:
-    cpu_percent = psutil.cpu_percent(interval=0.3)
-    mem = psutil.virtual_memory()
-    disk = psutil.disk_usage(Path.home().anchor)
+    try:
+        cpu_percent = psutil.cpu_percent(interval=0.3)
+        mem = psutil.virtual_memory()
+        disk = psutil.disk_usage(Path.home().anchor)
+    except Exception as exc:
+        return f"Error: no pude leer el estado del sistema: {exc}"
 
     def gb(n: int) -> float:
         return round(n / (1024 ** 3), 1)

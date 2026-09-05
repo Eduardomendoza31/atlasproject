@@ -790,7 +790,11 @@ body[data-atlas-state="escuchando"] .card-rail {
 #chat {
   width: min(560px, calc(100% - 44px));
   margin: 0 auto 10px;
-  max-height: 200px;
+  /* Antes 200px, de cuando los mensajes eran casi todos de una linea.
+     Con planes anunciados, delegaciones a agentes e informes de
+     resultado (todos con varias lineas) se quedaba corto y obligaba a
+     hacer scroll para ver hasta el boton de confirmar. */
+  max-height: 320px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;

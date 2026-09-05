@@ -214,16 +214,31 @@ function flashPanel(titleText) {
   setTimeout(() => panel.classList.remove("panel-flash"), 900);
 }
 
+const TIER_LABEL = { safe: "🟢", sensitive: "🟡", critical: "🔴" };
+
+async function showAvailableTools() {
+  try {
+    const res = await fetch("http://127.0.0.1:8731/tools");
+    const data = await res.json();
+    const tools = data.tools || [];
+    if (tools.length === 0) {
+      addMessage("No hay herramientas registradas todavía.", "atlas");
+      return;
+    }
+    const lines = tools.map((t) => `${TIER_LABEL[t.tier] || "•"} ${t.name} — ${t.description}`);
+    addMessage(`Herramientas disponibles (${tools.length}):\n${lines.join("\n")}`, "atlas");
+  } catch {
+    addMessage("No pude consultar la lista de herramientas ahora mismo.", "atlas");
+  }
+}
+
 const NAV_ACTIONS = {
   proyectos: () => addMessage("Proyectos todavía no está construido.", "atlas"),
   skills: () => flashPanel("Skills"),
   automatizaciones: () => flashPanel("Automatizaciones"),
   archivos: () => sendQuickPrompt(QUICK_ACTIONS.find((q) => q.key === "explorer").prompt),
   memoria: () => flashPanel("Memoria"),
-  herramientas: () => addMessage(
-    "Herramientas disponibles: leer archivos, listar carpetas, escribir archivos, ejecutar comandos de PowerShell, y buscar en internet.",
-    "atlas"
-  ),
+  herramientas: () => showAvailableTools(),
 };
 
 document.getElementById("sidebar-nav").addEventListener("click", (e) => {

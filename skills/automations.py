@@ -20,9 +20,12 @@ SKILL = {
 
 
 async def _exec_create_automation(arguments: dict) -> str:
-    description = arguments["description"]
-    schedule = arguments["schedule"]
-    automation = _create(description, schedule)
+    try:
+        description = arguments["description"]
+        schedule = arguments["schedule"]
+        automation = _create(description, schedule)
+    except Exception as exc:
+        return f"Error: no pude crear la automatización: {exc}"
     return f"Automatización creada (id {automation.id}): '{description}' con horario {schedule}."
 
 
@@ -39,14 +42,20 @@ async def _exec_list_automations(_arguments: dict) -> str:
 
 
 async def _exec_delete_automation(arguments: dict) -> str:
-    automation_id = arguments["id"]
+    try:
+        automation_id = arguments["id"]
+    except Exception as exc:
+        return f"Error: falta el id de la automatización ({exc})."
     ok = _delete(automation_id)
     return f"Automatización {automation_id} eliminada." if ok else f"No encontré una automatización con id '{automation_id}'."
 
 
 async def _exec_set_automation_enabled(arguments: dict) -> str:
-    automation_id = arguments["id"]
-    enabled = bool(arguments["enabled"])
+    try:
+        automation_id = arguments["id"]
+        enabled = bool(arguments["enabled"])
+    except Exception as exc:
+        return f"Error: falta el campo {exc} para activar/pausar la automatización."
     ok = _set_enabled(automation_id, enabled)
     if not ok:
         return f"No encontré una automatización con id '{automation_id}'."

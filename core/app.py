@@ -10,7 +10,7 @@ from core.automations import list_automations, scheduler_loop
 from core.config import USER_NAME
 from core.skills import installed_skills, load_all as load_skills
 from core.subagents import list_subagents
-from core.tools import RUN_COMMAND_UI_OUTPUT_CAP, Tool
+from core.tools import RUN_COMMAND_UI_OUTPUT_CAP, TOOLS, Tool
 from core.voice import synthesize, transcribe
 from memory.cortex import maybe_save, relevant_context
 
@@ -151,6 +151,16 @@ async def list_skills():
         "skills": [
             {"name": s.name, "description": s.description}
             for s in installed_skills()
+        ]
+    }
+
+
+@app.get("/tools")
+async def get_tools():
+    return {
+        "tools": [
+            {"name": t.name, "description": t.description, "tier": t.tier}
+            for t in TOOLS.values()
         ]
     }
 

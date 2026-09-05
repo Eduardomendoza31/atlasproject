@@ -18,8 +18,15 @@ Usuario: {user_text}
 Atlas: {assistant_text}
 
 Decide si el usuario dio, en su propio mensaje, algun dato nuevo que valga la
-pena recordar a largo plazo (datos personales, preferencias, proyectos,
-decisiones, hechos).
+pena recordar a largo plazo (datos personales, proyectos, decisiones, hechos
+puntuales de una sola vez).
+
+IMPORTANTE: si lo que el usuario esta haciendo es enseniar una REGLA de
+comportamiento futuro para Atlas (algo que debe aplicar siempre de ahi en
+adelante, como "los PDF van a la carpeta X" o "los resumenes hazlos cortos") -
+eso NO se guarda aca. Ese flujo es separado (usa confirmacion explicita del
+usuario antes de guardarse) y guardarlo tambien aca crearia una nota
+duplicada. Si el turno es sobre eso y nada mas, responde NADA.
 
 Si NO hay un dato nuevo confirmado por el usuario, responde exactamente:
 NADA
