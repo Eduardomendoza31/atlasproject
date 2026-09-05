@@ -5,6 +5,7 @@ __pycache__/
 memory/vault/*.md
 memory/vault/.embeddings_cache.json
 !memory/vault/.gitkeep
+memory/automations.json
 atlas_stdout.log
 atlas_stderr.log
 .claude/

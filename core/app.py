@@ -6,6 +6,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from core.agent import run_agent_turn
+from core.automations import list_automations, scheduler_loop
 from core.config import USER_NAME
 from core.skills import installed_skills, load_all as load_skills
 from core.tools import RUN_COMMAND_UI_OUTPUT_CAP, Tool
@@ -129,6 +130,30 @@ async def list_skills():
             for s in installed_skills()
         ]
     }
+
+
+@app.get("/automations")
+async def get_automations():
+    return {
+        "automations": [
+            {
+                "id": a.id,
+                "description": a.description,
+                "schedule": a.schedule,
+                "enabled": a.enabled,
+                "last_run": a.last_run,
+            }
+            for a in list_automations()
+        ]
+    }
+
+
+@app.on_event("startup")
+async def _start_automations_scheduler() -> None:
+    # Tarea de fondo de por vida (no un asyncio.create_task suelto en
+    # background_tasks, que es para tareas puntuales que terminan solas -
+    # ver core/automations.py::scheduler_loop, corre para siempre).
+    asyncio.create_task(scheduler_loop())
 
 
 async def _run_turn(

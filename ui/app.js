@@ -130,6 +130,43 @@ async function loadSkills() {
 
 loadSkills();
 
+// --- Automatizaciones: reales, vienen del backend (core/automations.py).
+// Se crean/administran conversando con Atlas (create_automation,
+// list_automations, etc.) - este panel solo las muestra, no las edita.
+const automationsListEl = document.getElementById("automations-list");
+
+function describeSchedule(schedule) {
+  if (!schedule) return "";
+  if (schedule.type === "daily") return `Todos los días a las ${schedule.time || "08:00"}`;
+  if (schedule.type === "weekly") return `Los ${schedule.weekday || "lunes"} a las ${schedule.time || "08:00"}`;
+  if (schedule.type === "interval_minutes") return `Cada ${schedule.minutes || 60} min`;
+  return "Horario personalizado";
+}
+
+async function loadAutomations() {
+  try {
+    const res = await fetch("http://127.0.0.1:8731/automations");
+    const data = await res.json();
+    const automations = data.automations || [];
+    if (automations.length === 0) {
+      automationsListEl.innerHTML = '<li class="panel-empty">No hay automatizaciones creadas. Pídele a Atlas que cree una.</li>';
+      return;
+    }
+    automationsListEl.innerHTML = "";
+    automations.forEach((a) => {
+      const li = document.createElement("li");
+      li.className = "skill-item";
+      const statusIcon = a.enabled ? "check-circle" : "warning";
+      li.innerHTML = `<span class="entry-icon">${icon(statusIcon)}</span><span><strong>${a.description}</strong><br><span class="skill-desc">${describeSchedule(a.schedule)} — ${a.enabled ? "activa" : "pausada"}</span></span>`;
+      automationsListEl.appendChild(li);
+    });
+  } catch {
+    automationsListEl.innerHTML = '<li class="panel-empty">No hay automatizaciones creadas. Pídele a Atlas que cree una.</li>';
+  }
+}
+
+loadAutomations();
+
 // --- Barra de accesos rapidos: mandan una instruccion en lenguaje
 // natural, Atlas decide usar run_command (y el usuario confirma, como
 // con cualquier herramienta critica) - no se salta el flujo existente.
@@ -263,6 +300,11 @@ function highlightCard(cardKey) {
 // reales que van pasando, no para el plan que el modelo declaro).
 const META_TOOLS = new Set(["announce_plan", "report_outcome"]);
 
+// Cuando una de estas termina bien, el panel "Automatizaciones" puede
+// haber cambiado (se creo, se borro, o se activo/pauso una) - se vuelve
+// a pedir la lista real en vez de dejar el panel desactualizado.
+const AUTOMATION_TOOLS = new Set(["create_automation", "delete_automation", "set_automation_enabled"]);
+
 window.addEventListener("atlas:tool", (e) => {
   const d = e.detail;
   if (d.phase === "call") {
@@ -287,6 +329,9 @@ window.addEventListener("atlas:tool", (e) => {
       completePlanStep(d.id, d.denied);
       setAgentActivity(null);
       highlightCard(null);
+    }
+    if (!d.denied && AUTOMATION_TOOLS.has(d.name)) {
+      loadAutomations();
     }
   }
 });
