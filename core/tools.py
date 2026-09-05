@@ -17,6 +17,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Awaitable, Callable
 
+from ddgs import DDGS
+from ddgs.exceptions import DDGSException
+
 RiskTier = str  # "safe" | "sensitive" | "critical"
 
 READ_FILE_MAX_BYTES = 200_000
@@ -25,6 +28,7 @@ WRITE_FILE_MAX_BYTES = 500_000
 RUN_COMMAND_TIMEOUT_SECONDS = 30
 RUN_COMMAND_MODEL_OUTPUT_CAP = 20_000
 RUN_COMMAND_UI_OUTPUT_CAP = 4_000
+WEB_SEARCH_MAX_RESULTS = 5
 
 
 @dataclass
@@ -171,6 +175,32 @@ async def _exec_run_command(arguments: dict) -> str:
     return output
 
 
+async def _exec_web_search(arguments: dict) -> str:
+    query = arguments["query"]
+    try:
+        # DDGS().text() es sincrono (usa un cliente HTTP normal por
+        # debajo) - se corre en un hilo aparte para no bloquear el loop
+        # de eventos mientras espera la respuesta de la red.
+        results = await asyncio.to_thread(
+            lambda: DDGS().text(query, max_results=WEB_SEARCH_MAX_RESULTS)
+        )
+    except DDGSException as exc:
+        return f"Error: la busqueda fallo: {exc}"
+    except Exception as exc:
+        return f"Error: la busqueda fallo: {exc}"
+
+    if not results:
+        return "No se encontraron resultados."
+
+    lines = []
+    for i, r in enumerate(results, start=1):
+        title = r.get("title", "(sin titulo)")
+        href = r.get("href", "")
+        body = r.get("body", "")
+        lines.append(f"{i}. {title}\n{href}\n{body}")
+    return "\n\n".join(lines)
+
+
 register(Tool(
     name="read_file",
     description="Lee el contenido de un archivo de texto del computador del usuario.",
@@ -239,4 +269,22 @@ register(Tool(
     tier="critical",
     executor=_exec_run_command,
     confirm_text=lambda a: f"Ejecutar comando: {a.get('command')}",
+))
+
+register(Tool(
+    name="web_search",
+    description=(
+        "Busca en internet informacion actual o que no sepas con certeza. "
+        "Devuelve titulo, url y un fragmento de cada resultado."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "Los terminos de busqueda."},
+        },
+        "required": ["query"],
+    },
+    tier="safe",
+    executor=_exec_web_search,
+    confirm_text=lambda a: f"Buscar en internet: {a.get('query')}",
 ))

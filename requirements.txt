@@ -10,3 +10,4 @@ faster-whisper==1.2.1
 edge-tts==7.2.8
 mediapipe==0.10.21
 opencv-contrib-python==4.11.0.86
+ddgs==9.16.0

@@ -144,6 +144,7 @@ const TOOL_TIERS = {
   list_directory: "safe",
   write_file: "sensitive",
   run_command: "critical",
+  web_search: "safe",
 };
 const TIER_EMOJI = { safe: "🟢", sensitive: "🟡", critical: "🔴" };
 
