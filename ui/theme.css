@@ -490,10 +490,18 @@ button {
      #face-wrap/.face-ring/.face-halo mas abajo) se calcula contra el
      alto REAL de esta caja, no solo el ancho de la pantalla - asi el
      rostro se achica solo cuando hay menos espacio vertical (p. ej. el
-     chat/composer creciendo) en vez de desbordar y quedar recortado. */
+     chat/composer creciendo) en vez de desbordar y quedar recortado.
+     El limite de ancho/alto NO es 92%/58cqh a secas: .face-halo (el
+     elemento decorativo mas grande alrededor del rostro) mide
+     1.769 x --face-w, asi que si --face-w llega a ser mas del ~56% del
+     contenedor, el halo mismo queda mas ancho/alto que el contenedor y
+     el overflow:hidden de aca abajo le corta los bordes en seco (ventanas
+     angostas y altas lo mostraban clarito: un anillo con las puntas
+     izquierda/derecha cortadas). Por eso el tope real es ~53% (con un
+     margen chico), no un numero mayor. */
   container-type: size;
   container-name: facestage;
-  --face-w: min(260px, 92%, 58cqh);
+  --face-w: min(260px, 53%, 53cqh);
 }
 
 /* Halo radiante detras del rostro: un resplandor difuso de dos tonos
@@ -1216,8 +1224,12 @@ body[data-atlas-state="escuchando"] .card-rail {
 }
 
 @media (max-width: 560px) {
-  .app-shell { grid-template-columns: 1fr; }
-  .sidebar { display: none; }
+  /* Antes esto escondia la sidebar entera (display:none) - a ese ancho
+     ya no quedaba ninguna forma de llegar a Proyectos/Skills/
+     Automatizaciones/etc, la navegacion quedaba inalcanzable, no solo
+     "compacta". Se mantiene el riel de solo-iconos (ya usado desde los
+     860px) en vez de desaparecer del todo. */
+  .app-shell { grid-template-columns: 56px 1fr; }
   .stage-header { padding: 12px 14px; }
   .status-title { display: none; }
   #stop-button span { display: none; }
