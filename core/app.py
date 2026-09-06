@@ -1,6 +1,6 @@
 import asyncio
 import base64
-from datetime import date
+from datetime import date, datetime
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -63,6 +63,16 @@ _MESES_ES = [
 def _fecha_actual_es() -> str:
     hoy = date.today()
     return f"{hoy.day} de {_MESES_ES[hoy.month - 1]} de {hoy.year}"
+
+
+def _hora_actual_es() -> str:
+    # Antes el prompt solo tenia la FECHA (_fecha_actual_es) - si el
+    # usuario preguntaba la hora, el modelo no tenia ningun dato real
+    # para responder y terminaba inventando una, sin avisar que era una
+    # adivinanza. Se usa la hora local de esta maquina (la misma que
+    # usa Windows), sin zona horaria fija hardcodeada.
+    ahora = datetime.now()
+    return ahora.strftime("%H:%M")
 
 
 def build_system_prompt() -> str:
@@ -233,6 +243,19 @@ async def _run_turn(
     context = await relevant_context(user_text)
     print(f"[Cortex] contexto para {user_text!r}: {context!r}", flush=True)
     messages = history.copy()
+    # La fecha/hora del system prompt inicial (build_system_prompt) se
+    # calcula una sola vez, al abrir la conexion websocket - si Atlas
+    # queda abierto un rato (es un asistente de escritorio, es lo
+    # esperable), esa hora se queda vieja enseguida y el modelo termina
+    # inventando una si el usuario pregunta que hora es. Esto se manda
+    # de nuevo, fresco, en CADA turno.
+    messages.insert(
+        -1,
+        {
+            "role": "system",
+            "content": f"Ahora mismo son las {_hora_actual_es()} del {_fecha_actual_es()}.",
+        },
+    )
     if context:
         messages.insert(-1, {"role": "system", "content": context})
 

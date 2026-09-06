@@ -12,10 +12,41 @@ const chatEl = document.getElementById("chat");
 const form = document.getElementById("composer");
 const input = document.getElementById("input");
 const stopButton = document.getElementById("stop-button");
+const muteButton = document.getElementById("mute-button");
 
 let ws = null;
 let atlasBubble = null;
 let typingBubble = null;
+
+// --- Silenciar la voz ---
+// El backend siempre manda audio_reply (aca no se cambia eso, la
+// respuesta en texto sigue llegando igual) - "silenciar" solo decide
+// si ESTE lado reproduce ese audio o no. Se recuerda entre sesiones.
+let ttsMuted = false;
+try {
+  ttsMuted = localStorage.getItem("atlas_tts_muted") === "1";
+} catch {
+  // localStorage puede fallar (perfil privado, etc.) - se sigue sin
+  // silenciar por defecto, no es motivo para romper nada mas.
+}
+
+function applyMuteIcon() {
+  muteButton.innerHTML = icon(ttsMuted ? "speaker-x" : "speaker-high");
+  muteButton.classList.toggle("active", ttsMuted);
+  muteButton.title = ttsMuted ? "Activar la voz de Atlas" : "Silenciar la voz de Atlas";
+}
+applyMuteIcon();
+
+muteButton.addEventListener("click", () => {
+  ttsMuted = !ttsMuted;
+  try {
+    localStorage.setItem("atlas_tts_muted", ttsMuted ? "1" : "0");
+  } catch {
+    // sin persistencia si el storage no esta disponible - se queda
+    // silenciado solo para esta sesion, igual funciona.
+  }
+  applyMuteIcon();
+});
 
 // --- Modo voz continuo ---
 // Al tocar el mic por primera vez se arma "voiceLoopActive": mientras
@@ -325,16 +356,25 @@ function connect() {
       setAtlasState("listo");
       addMessage(`⚠️ ${data.text}`, "atlas");
     } else if (data.type === "audio_reply") {
-      const audio = new Audio(`data:audio/mpeg;base64,${data.data}`);
-      audio.addEventListener("play", () => setAtlasState("hablando"));
-      audio.addEventListener("ended", () => {
+      if (ttsMuted) {
+        // Silenciado: la respuesta en texto ya se mostro igual que
+        // siempre, simplemente no se reproduce este audio ni se anima
+        // la boca con el. El resto del flujo (volver a escuchar si
+        // corresponde) sigue igual que si hubiera terminado de hablar.
         setAtlasState("listo");
-        // Pequeña pausa antes de reactivar el mic - si se hace en el
-        // instante mismo en que termina el audio, a veces el propio
-        // altavoz/eco del final de la frase se cuela en la grabacion.
         setTimeout(maybeResumeListening, 400);
-      });
-      playWithLipSync(audio);
+      } else {
+        const audio = new Audio(`data:audio/mpeg;base64,${data.data}`);
+        audio.addEventListener("play", () => setAtlasState("hablando"));
+        audio.addEventListener("ended", () => {
+          setAtlasState("listo");
+          // Pequeña pausa antes de reactivar el mic - si se hace en el
+          // instante mismo en que termina el audio, a veces el propio
+          // altavoz/eco del final de la frase se cuela en la grabacion.
+          setTimeout(maybeResumeListening, 400);
+        });
+        playWithLipSync(audio);
+      }
     } else if (data.type === "tool_call") {
       clearTyping();
       const tier = TOOL_TIERS[data.name] || "safe";
@@ -481,7 +521,9 @@ fileInput.addEventListener("change", () => {
     pendingAttachment = { filename: file.name, mime_type: file.type || "application/octet-stream", data: base64 };
     attachmentNameEl.textContent = file.name;
     attachmentChip.hidden = false;
-    input.focus();
+    // Sin foco automatico aca: en pantallas tactiles esto reabria el
+    // teclado justo despues de elegir el archivo, y el toque siguiente
+    // (en el mic, en enviar, etc.) se gastaba en cerrarlo de nuevo.
   };
   reader.onerror = () => addMessage(`⚠️ No pude leer "${file.name}".`, "atlas");
   reader.readAsDataURL(file);
