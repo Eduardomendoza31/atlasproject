@@ -147,6 +147,22 @@ fetch("http://127.0.0.1:8731/tools")
 
 let turnInFlight = false;
 let pendingConfirmId = null;
+let pendingConfirmBubbleEl = null;
+
+// Palabras sueltas para interpretar un "si"/"no" hablado como respuesta
+// a una confirmacion, sin necesitar una frase exacta. Deliberadamente
+// simple (coincidencia de palabras, no NLP) - si no reconoce ninguna,
+// se le pide al usuario que lo aclare en vez de adivinar.
+const CONFIRM_YES_WORDS = ["si", "sí", "claro", "dale", "permite", "permitir", "acepto", "adelante", "hazlo", "confirmo", "ok", "okay", "vale", "correcto"];
+const CONFIRM_NO_WORDS = ["no", "cancela", "cancelar", "deniega", "denegar", "para", "detente", "negativo"];
+
+function matchYesNo(text) {
+  const normalized = text.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^\w\s]/g, "");
+  const words = normalized.split(/\s+/);
+  if (words.some((w) => CONFIRM_NO_WORDS.includes(w))) return false;
+  if (words.some((w) => CONFIRM_YES_WORDS.includes(w))) return true;
+  return null;
+}
 
 function setAtlasState(state) {
   window.dispatchEvent(new CustomEvent("atlas:state", { detail: { state } }));
@@ -186,6 +202,7 @@ function clearTyping() {
 function addConfirmBubble({ id, name, tier, description }) {
   setComposerEnabled(false);
   pendingConfirmId = id;
+  const wasVoiceLoop = voiceLoopActive;
   const div = document.createElement("div");
   div.className = `msg atlas confirm confirm-${tier}`;
   const tierLabel = tier === "critical" ? "🔴 Acción crítica" : "🟡 Confirmación requerida";
@@ -234,6 +251,19 @@ function addConfirmBubble({ id, name, tier, description }) {
 
   approveBtn.addEventListener("click", () => resolveConfirm(id, true, div));
   denyBtn.addEventListener("click", () => resolveConfirm(id, false, div));
+
+  pendingConfirmBubbleEl = div;
+  // Si la conversacion viene por voz, se puede contestar la
+  // confirmacion hablando ("sí"/"no") en vez de tener que tocar un
+  // boton - setComposerEnabled(false) de arriba deja el mic
+  // deshabilitado como el resto del composer, asi que aca se reactiva
+  // solo para este caso puntual.
+  if (wasVoiceLoop) {
+    micButtonForState.disabled = false;
+    setTimeout(() => {
+      if (!micButtonForState.classList.contains("recording")) micButtonForState.click();
+    }, 500);
+  }
 }
 
 function resolveConfirm(id, approved, bubbleEl) {
@@ -242,6 +272,7 @@ function resolveConfirm(id, approved, bubbleEl) {
   bubbleEl.classList.add(approved ? "confirm-resolved-yes" : "confirm-resolved-no");
   if (pendingConfirmId === id) {
     pendingConfirmId = null;
+    pendingConfirmBubbleEl = null;
     setComposerEnabled(true);
   }
 }
@@ -254,6 +285,23 @@ function connect() {
   ws.onmessage = (event) => {
     const data = JSON.parse(event.data);
     if (data.type === "transcript") {
+      if (pendingConfirmId) {
+        // Con una confirmacion pendiente, lo que se acaba de hablar es
+        // la respuesta a esa confirmacion (sí/no), no un mensaje nuevo -
+        // el backend ya sabe no arrancar un turno en este caso (ver
+        // core/app.py).
+        addMessage(`🎙️ "${data.text}"`, "user");
+        const approved = matchYesNo(data.text);
+        if (approved === null) {
+          addMessage("No entendí si es sí o no - ¿confirmás o cancelás?", "atlas");
+          setTimeout(() => {
+            if (!micButtonForState.classList.contains("recording")) micButtonForState.click();
+          }, 400);
+        } else {
+          resolveConfirm(pendingConfirmId, approved, pendingConfirmBubbleEl);
+        }
+        return;
+      }
       addMessage(data.text, "user");
       typingBubble = addMessage("escribiendo…", "atlas typing");
       setTurnInFlight(true);
@@ -298,6 +346,11 @@ function connect() {
         const { summary, verified, success } = data.arguments;
         const badge = success ? (verified ? "✅ Hecho y verificado" : "⚠️ Hecho, sin verificar") : "❌ No se logró";
         addMessage(`${badge}: ${summary}`, "atlas outcome-report");
+      } else if (data.name === "stop_listening") {
+        // El modelo detecto que el usuario ya no necesita nada mas - se
+        // apaga el modo voz continuo sin mostrar una linea tecnica de
+        // "Atlas usa: stop_listening()" en el chat, no aporta nada verlo.
+        setVoiceLoopActive(false);
       } else {
         addMessage(
           `${TIER_EMOJI[tier]} Atlas usa: ${data.name}(${JSON.stringify(data.arguments)})`,

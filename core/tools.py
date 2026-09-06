@@ -334,6 +334,30 @@ register(Tool(
     confirm_text=lambda a: "Anunciar plan",
 ))
 
+async def _exec_stop_listening(_arguments: dict) -> str:
+    # Igual que announce_plan/report_outcome: no hace nada por si sola -
+    # la interfaz (ui/chat.js) intercepta este tool_call especificamente
+    # y apaga el modo de escucha continua, en vez de que el modelo tenga
+    # que "controlar" el microfono el mismo.
+    return "Escucha continua desactivada."
+
+
+register(Tool(
+    name="stop_listening",
+    description=(
+        "Llamala cuando el usuario, hablando o escribiendo, deje claro que "
+        "no necesita nada mas por ahora (dijo 'no', 'nada más', 'eso es "
+        "todo', se despidio, etc.) - hace que Atlas deje de escuchar el "
+        "microfono automaticamente hasta que el usuario lo vuelva a activar "
+        "el mismo. Llamala junto con tu respuesta breve de cierre, no en vez "
+        "de ella."
+    ),
+    parameters={"type": "object", "properties": {}, "required": []},
+    tier="safe",
+    executor=_exec_stop_listening,
+    confirm_text=lambda a: "Dejar de escuchar",
+))
+
 register(Tool(
     name="report_outcome",
     description=(

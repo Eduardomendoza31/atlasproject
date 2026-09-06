@@ -786,7 +786,14 @@ body[data-atlas-state="escuchando"] .card-rail {
   transition: width 0.2s ease, box-shadow 0.2s ease;
 }
 
-#composer:focus-within {
+/* Antes era :focus-within, que dispara con CUALQUIER hijo enfocado -
+   clickear el mic o el clip de adjuntar tambien los enfoca (son
+   botones), asi que la barra entera crecia de golpe en pleno click y el
+   boton quedaba corrido de donde estaba: el primer toque no hacia nada
+   (el click terminaba en otro punto) y hacia falta un segundo toque ya
+   con todo asentado. Ahora solo crece cuando el TEXTO (#input) tiene el
+   foco de verdad, es decir cuando el usuario esta escribiendo. */
+#composer:has(#input:focus) {
   width: min(560px, calc(100% - 44px));
   box-shadow: var(--card-glow-hover);
 }

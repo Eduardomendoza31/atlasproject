@@ -153,9 +153,11 @@ def build_system_prompt() -> str:
         "todo', 'gracias, nada más', una despedida, etc.), NO vuelvas a "
         "preguntar '¿algo más?' en tu respuesta a eso - solo confirma "
         "brevemente (un 'listo', 'perfecto', 'cuando me necesites aquí "
-        "estoy') sin abrir la pregunta de nuevo. Repetir la pregunta "
-        "despues de que ya te dijeron que no hace falta nada es molesto, "
-        "no atento."
+        "estoy') sin abrir la pregunta de nuevo, Y ademas llama a la "
+        "herramienta stop_listening junto con esa respuesta, para que deje "
+        "de escuchar el microfono en vez de seguir esperando que hable de "
+        "nuevo. Repetir la pregunta o seguir escuchando despues de que ya "
+        "te dijeron que no hace falta nada es molesto, no atento."
     )
 
 
@@ -357,6 +359,16 @@ async def chat(websocket: WebSocket):
                 if not user_text:
                     continue
                 await websocket.send_json({"type": "transcript", "text": user_text})
+                if pending_confirmations:
+                    # Hay una confirmacion pendiente - el frontend
+                    # interpreta este transcript como la respuesta de
+                    # si/no (ver ui/chat.js), no como un mensaje nuevo.
+                    # Arrancar un turno aca fallaria de todos modos
+                    # (current_turn_task sigue "vivo", esperando la
+                    # confirmacion) con un "ya hay un turno en curso"
+                    # que no tiene sentido mostrarle al usuario justo
+                    # cuando dijo "si" o "no".
+                    continue
             else:
                 user_text = incoming.get("text", "")
 
