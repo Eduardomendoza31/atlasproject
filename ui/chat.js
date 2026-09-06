@@ -17,6 +17,21 @@ let ws = null;
 let atlasBubble = null;
 let typingBubble = null;
 
+// Si el turno actual empezo por voz (llego un "transcript"), cuando
+// termine de hablar la respuesta se vuelve a activar el microfono solo -
+// asi una conversacion hablada puede seguir de corrido sin tocar nada.
+// Si el usuario escribio en vez de hablar, no se activa el microfono
+// solo (no tiene sentido prender el mic porque escribio algo).
+let lastTurnWasVoice = false;
+
+function maybeResumeListening() {
+  if (!lastTurnWasVoice || turnInFlight) return;
+  const micButton = document.getElementById("mic-button");
+  if (micButton && !micButton.disabled && !micButton.classList.contains("recording")) {
+    micButton.click();
+  }
+}
+
 // Nivel de riesgo de cada herramienta, para el emoji del primer aviso
 // ("Atlas usa: tool(args)") antes de que llegue (si aplica) la burbuja
 // de confirmacion real. Arranca con los 4 basicos como resguardo (por si
@@ -88,9 +103,24 @@ function addConfirmBubble({ id, name, tier, description }) {
   label.className = "confirm-label";
   label.textContent = tierLabel;
 
+  // Herramientas como run_command mandan "explicacion simple\n\n🔧 comando
+  // tecnico" (ver core/tools.py) - se separa en dos partes con estilos
+  // distintos para que lo primero que se lea sea la explicacion en
+  // español simple, no la sintaxis. Si no hay marcador (la mayoria de
+  // las herramientas), se muestra tal cual, como antes.
   const desc = document.createElement("div");
   desc.className = "confirm-desc";
-  desc.textContent = description;
+  const marker = "\n\n🔧 ";
+  const markerIndex = description.indexOf(marker);
+  if (markerIndex === -1) {
+    desc.textContent = description;
+  } else {
+    desc.appendChild(document.createTextNode(description.slice(0, markerIndex)));
+    const tech = document.createElement("span");
+    tech.className = "confirm-technical";
+    tech.textContent = description.slice(markerIndex + marker.length);
+    desc.appendChild(tech);
+  }
 
   const actions = document.createElement("div");
   actions.className = "confirm-actions";
@@ -133,6 +163,7 @@ function connect() {
   ws.onmessage = (event) => {
     const data = JSON.parse(event.data);
     if (data.type === "transcript") {
+      lastTurnWasVoice = true;
       addMessage(data.text, "user");
       typingBubble = addMessage("escribiendo…", "atlas typing");
       setTurnInFlight(true);
@@ -158,7 +189,13 @@ function connect() {
     } else if (data.type === "audio_reply") {
       const audio = new Audio(`data:audio/mpeg;base64,${data.data}`);
       audio.addEventListener("play", () => setAtlasState("hablando"));
-      audio.addEventListener("ended", () => setAtlasState("listo"));
+      audio.addEventListener("ended", () => {
+        setAtlasState("listo");
+        // Pequeña pausa antes de reactivar el mic - si se hace en el
+        // instante mismo en que termina el audio, a veces el propio
+        // altavoz/eco del final de la frase se cuela en la grabacion.
+        setTimeout(maybeResumeListening, 400);
+      });
       playWithLipSync(audio);
     } else if (data.type === "tool_call") {
       clearTyping();
@@ -217,6 +254,7 @@ function connect() {
       window.dispatchEvent(new CustomEvent("atlas:subagent", { detail: { phase: "done", agent: data.agent_name } }));
       setAtlasState("ejecutando");
     } else if (data.type === "stopped") {
+      lastTurnWasVoice = false;
       clearTyping();
       atlasBubble = null;
       setTurnInFlight(false);
@@ -249,14 +287,64 @@ function sendMessage(payload) {
 form.addEventListener("submit", (e) => {
   e.preventDefault();
   const text = input.value.trim();
-  if (!text) return;
-  if (!sendMessage({ type: "text", text })) return;
-  addMessage(text, "user");
+  if (!text && !pendingAttachment) return;
+  lastTurnWasVoice = false;
+  const payload = { type: "text", text };
+  if (pendingAttachment) payload.attachment = pendingAttachment;
+  if (!sendMessage(payload)) return;
+  addMessage(text + (pendingAttachment ? `\n📎 ${pendingAttachment.filename}` : ""), "user");
   input.value = "";
+  clearAttachment();
   typingBubble = addMessage("escribiendo…", "atlas typing");
   setTurnInFlight(true);
   setAtlasState("procesando");
 });
+
+// --- Adjuntar imagen o PDF: se lee como base64 en el navegador y se
+// manda junto con el proximo mensaje (o solo, con un texto por defecto
+// si el usuario no escribe nada) - Atlas lo interpreta como una imagen
+// mas en la conversacion, igual que la captura de pantalla de
+// skills/vision.py, asi que no hizo falta ningun cambio en el modelo.
+const ATTACHMENT_MAX_BYTES = 15 * 1024 * 1024;
+const attachButton = document.getElementById("attach-button");
+const fileInput = document.getElementById("file-input");
+const attachmentChip = document.getElementById("attachment-chip");
+const attachmentNameEl = document.getElementById("attachment-name");
+const attachmentRemoveBtn = document.getElementById("attachment-remove");
+let pendingAttachment = null;
+
+function clearAttachment() {
+  pendingAttachment = null;
+  attachmentChip.hidden = true;
+  attachmentNameEl.textContent = "";
+  fileInput.value = "";
+}
+
+attachButton.addEventListener("click", () => fileInput.click());
+
+fileInput.addEventListener("change", () => {
+  const file = fileInput.files[0];
+  if (!file) return;
+  if (file.size > ATTACHMENT_MAX_BYTES) {
+    addMessage(`⚠️ "${file.name}" pesa demasiado (máximo 15 MB).`, "atlas");
+    fileInput.value = "";
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    // reader.result es "data:<mime>;base64,<datos>" - solo se necesita
+    // la parte de despues de la coma.
+    const base64 = reader.result.split(",", 2)[1] || "";
+    pendingAttachment = { filename: file.name, mime_type: file.type || "application/octet-stream", data: base64 };
+    attachmentNameEl.textContent = file.name;
+    attachmentChip.hidden = false;
+    input.focus();
+  };
+  reader.onerror = () => addMessage(`⚠️ No pude leer "${file.name}".`, "atlas");
+  reader.readAsDataURL(file);
+});
+
+attachmentRemoveBtn.addEventListener("click", clearAttachment);
 
 stopButton.addEventListener("click", () => {
   sendMessage({ type: "stop" });

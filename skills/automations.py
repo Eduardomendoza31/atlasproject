@@ -19,6 +19,34 @@ SKILL = {
 }
 
 
+def _describe_schedule(schedule: dict) -> str:
+    """Version en español simple de un horario, para mostrarle al usuario
+    en la confirmacion en vez del diccionario tecnico ({'type': ...})."""
+    kind = (schedule or {}).get("type")
+    if kind == "daily":
+        return f"todos los días a las {schedule.get('time', '08:00')}"
+    if kind == "weekly":
+        dias = {
+            "monday": "los lunes", "tuesday": "los martes", "wednesday": "los miércoles",
+            "thursday": "los jueves", "friday": "los viernes", "saturday": "los sábados",
+            "sunday": "los domingos",
+        }
+        dia = dias.get(str(schedule.get("weekday", "")).lower(), "cada semana")
+        return f"{dia} a las {schedule.get('time', '08:00')}"
+    if kind == "interval_minutes":
+        return f"cada {schedule.get('minutes', 60)} minutos"
+    return "con un horario personalizado"
+
+
+def _find_description(automation_id: str) -> str:
+    """Busca la descripcion en español de una automatizacion por id, para
+    no mostrar solo un id sin contexto en la confirmacion."""
+    for a in _list():
+        if a.id == automation_id:
+            return f"'{a.description}'"
+    return f"con id {automation_id}"
+
+
 async def _exec_create_automation(arguments: dict) -> str:
     try:
         description = arguments["description"]
@@ -101,7 +129,10 @@ def register() -> None:
         },
         tier="sensitive",
         executor=_exec_create_automation,
-        confirm_text=lambda a: f"Crear automatización: {a.get('description')} ({a.get('schedule')})",
+        confirm_text=lambda a: (
+            f"Crear una tarea que se repita sola: \"{a.get('description')}\", "
+            f"{_describe_schedule(a.get('schedule'))}."
+        ),
     ))
 
     register_tool(Tool(
@@ -123,7 +154,7 @@ def register() -> None:
         },
         tier="sensitive",
         executor=_exec_delete_automation,
-        confirm_text=lambda a: f"Eliminar automatización: {a.get('id')}",
+        confirm_text=lambda a: f"Eliminar la automatización {_find_description(a.get('id'))}.",
     ))
 
     register_tool(Tool(
@@ -139,5 +170,8 @@ def register() -> None:
         },
         tier="sensitive",
         executor=_exec_set_automation_enabled,
-        confirm_text=lambda a: f"{'Activar' if a.get('enabled') else 'Pausar'} automatización: {a.get('id')}",
+        confirm_text=lambda a: (
+            f"{'Activar' if a.get('enabled') else 'Pausar'} la automatización "
+            f"{_find_description(a.get('id'))}."
+        ),
     ))

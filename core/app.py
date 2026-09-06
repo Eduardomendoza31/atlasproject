@@ -16,6 +16,10 @@ from memory.cortex import maybe_save, relevant_context
 
 app = FastAPI(title="Atlas Core")
 
+# ~15 MB de archivo real -> base64 le agrega ~33%, este es el limite en
+# caracteres del string base64, no del archivo original.
+ATTACHMENT_MAX_BASE64_CHARS = 20_000_000
+
 # Atlas solo escucha en 127.0.0.1 (nunca expuesto a la red), y la UI la
 # carga localmente (file:// en la app real, o un puerto de prueba
 # aparte al desarrollar) - permitir cualquier origen aca no abre nada
@@ -136,7 +140,15 @@ def build_system_prompt() -> str:
         "conversacion) y te devuelve un resultado que le comunicas al "
         "usuario. No delegues para algo simple que resolverias en un par de "
         "llamadas a tus propias herramientas - eso hazlo directo, sin "
-        "delegar."
+        "delegar.\n\n"
+        "Sobre cerrar la conversacion: cuando termines de ayudar con algo "
+        "(sobre todo despues de una tarea, no hace falta en un intercambio "
+        "trivial de una sola frase), cierra tu respuesta ofreciendo seguir "
+        "ayudando - algo natural como '¿hay algo más en que te pueda "
+        "ayudar?', variando la frase para no sonar repetitivo. El usuario "
+        "puede estar hablando por voz y quedarse escuchando tu respuesta, "
+        "asi que esa pregunta le da pie a seguir la conversacion sin tener "
+        "que decir nada mas el primero."
     )
 
 
@@ -339,7 +351,33 @@ async def chat(websocket: WebSocket):
                     continue
                 await websocket.send_json({"type": "transcript", "text": user_text})
             else:
-                user_text = incoming["text"]
+                user_text = incoming.get("text", "")
+
+            attachment = incoming.get("attachment")
+            if attachment:
+                b64_data = attachment.get("data", "")
+                if len(b64_data) > ATTACHMENT_MAX_BASE64_CHARS:
+                    await websocket.send_json({
+                        "type": "error",
+                        "text": "El archivo es demasiado grande (máximo ~15 MB).",
+                    })
+                    continue
+                if not user_text:
+                    user_text = f"Analiza el archivo adjunto ({attachment.get('filename', 'archivo')}) y contame qué contiene."
+                user_content = [
+                    {"type": "text", "text": user_text},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:{attachment.get('mime_type', 'application/octet-stream')};base64,{b64_data}"
+                        },
+                    },
+                ]
+            else:
+                user_content = user_text
+
+            if not user_text and not attachment:
+                continue
 
             if current_turn_task and not current_turn_task.done():
                 await websocket.send_json(
@@ -347,7 +385,7 @@ async def chat(websocket: WebSocket):
                 )
                 continue
 
-            history.append({"role": "user", "content": user_text})
+            history.append({"role": "user", "content": user_content})
             current_turn_task = asyncio.create_task(
                 _run_turn(websocket, history, user_text, pending_confirmations)
             )

@@ -62,5 +62,5 @@ def register() -> None:
         },
         tier="safe",
         executor=_exec_delegate_to_agent,
-        confirm_text=lambda a: f"Delegar a {a.get('agent')}",
+        confirm_text=lambda a: f"Pedirle al agente {a.get('agent')} que: {a.get('task')}",
     ))

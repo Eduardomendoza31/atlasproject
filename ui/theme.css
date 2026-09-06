@@ -304,7 +304,15 @@ button {
   flex: 1;
   display: grid;
   grid-template-columns: minmax(150px, 200px) 1fr minmax(150px, 200px);
-  align-items: center;
+  /* Antes "center": el rostro y las tarjetas se dibujaban a su tamaño
+     natural (a veces mas alto que el espacio real disponible) y ese
+     sobrante se recortaba en seco por el overflow:hidden de aca abajo -
+     con la barra de escribir/chat mas alta, el corte caia justo a
+     mitad del rostro/las tarjetas y se veia como si algo las tapara.
+     Con "stretch", cada columna (rostro y tarjetas) ocupa el alto REAL
+     disponible, y son ellas las que se ajustan/escalan adentro - ver
+     .face-stage (container query) y .card-rail (scroll propio). */
+  align-items: stretch;
   gap: 12px;
   padding: 12px 22px;
   min-height: 0;
@@ -314,8 +322,11 @@ button {
 .card-rail {
   display: flex;
   flex-direction: column;
+  justify-content: center;
   gap: 16px;
   min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
   transition: opacity 0.25s ease;
 }
 
@@ -332,6 +343,12 @@ button {
 .action-card {
   position: relative;
   display: block;
+  /* Sin esto, cuando el rail (columna) no tiene alto suficiente para
+     las 3 tarjetas, flexbox las encoge en vez de dejar que el rail
+     scrollee (.card-rail ya tiene overflow-y:auto) - encogida, el
+     titulo/descripcion quedaban invisibles por el overflow:hidden de
+     aca abajo, sin verse ningun error, solo el icono suelto. */
+  flex-shrink: 0;
   background: linear-gradient(165deg, rgba(126, 232, 250, 0.05), var(--panel-bg) 40%);
   box-shadow: var(--card-glow);
   border: 1px solid var(--panel-border);
@@ -469,6 +486,14 @@ button {
   min-width: 0;
   height: 100%;
   overflow: hidden;
+  /* Container query: el tamaño del rostro (--face-w, usado por
+     #face-wrap/.face-ring/.face-halo mas abajo) se calcula contra el
+     alto REAL de esta caja, no solo el ancho de la pantalla - asi el
+     rostro se achica solo cuando hay menos espacio vertical (p. ej. el
+     chat/composer creciendo) en vez de desbordar y quedar recortado. */
+  container-type: size;
+  container-name: facestage;
+  --face-w: min(260px, 92%, 58cqh);
 }
 
 /* Halo radiante detras del rostro: un resplandor difuso de dos tonos
@@ -481,11 +506,13 @@ button {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 460px;
-  height: 460px;
+  /* 460/260 = 1.769 - misma proporcion de siempre contra #face-wrap,
+     pero ahora escala junto con el (--face-w vive en .face-stage). */
+  width: calc(var(--face-w) * 1.769);
+  height: calc(var(--face-w) * 1.769);
   border-radius: 50%;
-  /* Tiene que ser bastante mas grande que #face-wrap (260x390) en las
-     dos dimensiones - si no, el aro/resplandor queda casi enteramente
+  /* Tiene que ser bastante mas grande que #face-wrap en las dos
+     dimensiones - si no, el aro/resplandor queda casi enteramente
      debajo de la cabeza y no se ve nada (nos paso: probamos 340px y
      era invisible en la practica, solo se notaba con un color de
      prueba solido). */
@@ -508,8 +535,9 @@ button {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 404px;
-  height: 404px;
+  /* 404/260 = 1.554 - misma proporcion de siempre, ahora escalable. */
+  width: calc(var(--face-w) * 1.554);
+  height: calc(var(--face-w) * 1.554);
   transform: translate(-50%, -50%);
   border-radius: 50%;
   pointer-events: none;
@@ -623,7 +651,11 @@ body[data-atlas-state="escuchando"] .card-rail {
 #face-wrap {
   position: relative;
   z-index: 1;
-  width: min(260px, 92%);
+  /* --face-w se calcula en .face-stage (container query de alto real) -
+     el rostro se achica solo cuando falta espacio vertical, no cuando
+     la ventana es angosta pero alta. Sin esto, un chat/composer mas
+     alto simplemente desbordaba el rostro y se veia "tapado". */
+  width: var(--face-w);
   /* El fondo ya NO se apaga con un mask-image de CSS (una elipse nunca
      calza perfecto con la silueta real de cabeza+cuello+hombros: dejaba
      ver "fantasmas" del fondo de la foto - lineas rectas donde el
@@ -739,7 +771,8 @@ body[data-atlas-state="escuchando"] .card-rail {
 }
 
 #composer button[type="submit"],
-#mic-button {
+#mic-button,
+#attach-button {
   border: none;
   border-radius: 50%;
   width: 38px;
@@ -753,7 +786,64 @@ body[data-atlas-state="escuchando"] .card-rail {
 }
 
 #composer button[type="submit"] svg,
-#mic-button svg { width: 16px; height: 16px; }
+#mic-button svg,
+#attach-button svg { width: 16px; height: 16px; }
+
+#attach-button {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-0);
+  box-shadow: inset 0 0 0 1px rgba(126, 232, 250, 0.18);
+}
+
+#attach-button:hover {
+  box-shadow: inset 0 0 0 1px rgba(126, 232, 250, 0.18), 0 0 12px -2px var(--accent-2);
+}
+
+/* ---------- Chip de archivo adjunto ---------- */
+
+.attachment-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  max-width: min(480px, calc(100% - 44px));
+  margin: 0 auto 8px;
+  padding: 6px 8px 6px 12px;
+  background: var(--panel-bg);
+  box-shadow: var(--card-glow);
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  backdrop-filter: blur(12px);
+  color: var(--accent-2);
+  font-size: 12px;
+}
+
+.attachment-chip svg { width: 14px; height: 14px; flex-shrink: 0; }
+
+#attachment-name {
+  color: var(--text-0);
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#attachment-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-1);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+#attachment-remove svg { width: 10px; height: 10px; }
+#attachment-remove:hover { background: var(--danger); color: white; }
 
 #composer button[type="submit"] {
   background: var(--accent);
@@ -907,10 +997,24 @@ body[data-atlas-state="escuchando"] .card-rail {
 
 .confirm-desc {
   margin-bottom: 8px;
-  font-family: "Cascadia Code", monospace;
-  font-size: 11.5px;
+  /* Antes monospace para todo el texto - hacia que hasta la explicacion
+     en español simple se viera "de programador". Ahora es la tipografia
+     normal; el detalle tecnico (comando/ruta exacta) que le sigue en el
+     mismo texto queda distinguido por su propio estilo mas abajo, no
+     por forzar todo el bloque a verse como codigo. */
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
   word-break: break-word;
-  color: var(--text-1);
+  color: var(--text-0);
+}
+
+.confirm-desc .confirm-technical {
+  display: block;
+  margin-top: 6px;
+  font-family: "Cascadia Code", monospace;
+  font-size: 10.5px;
+  color: var(--text-2);
 }
 
 .confirm-actions {

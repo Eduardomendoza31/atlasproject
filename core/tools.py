@@ -258,22 +258,41 @@ register(Tool(
     },
     tier="sensitive",
     executor=_exec_write_file,
-    confirm_text=lambda a: f"Escribir archivo: {a.get('path')} ({len(a.get('content', ''))} caracteres)",
+    confirm_text=lambda a: f"Crear/guardar el archivo: {a.get('path')}",
 ))
 
 register(Tool(
     name="run_command",
-    description="Ejecuta un comando de PowerShell en el computador del usuario y devuelve su salida.",
+    description=(
+        "Ejecuta un comando de PowerShell en el computador del usuario y "
+        "devuelve su salida. Como esto se le muestra al usuario para que "
+        "confirme antes de correr y el usuario puede no saber de "
+        "programacion, SIEMPRE incluye tambien 'explicacion': una frase "
+        "corta y sin jerga tecnica de que hace el comando y para que, como "
+        "se la dirias a alguien que nunca uso una terminal."
+    ),
     parameters={
         "type": "object",
         "properties": {
             "command": {"type": "string", "description": "Comando de PowerShell a ejecutar."},
+            "explicacion": {
+                "type": "string",
+                "description": (
+                    "Que hace este comando y para que, en una frase simple y "
+                    "sin jerga tecnica (nada de nombres de comandos, rutas "
+                    "con barras, ni sintaxis) - la va a leer alguien que no "
+                    "sabe programar."
+                ),
+            },
         },
-        "required": ["command"],
+        "required": ["command", "explicacion"],
     },
     tier="critical",
     executor=_exec_run_command,
-    confirm_text=lambda a: f"Ejecutar comando: {a.get('command')}",
+    confirm_text=lambda a: (
+        f"{a.get('explicacion') or 'Ejecutar una acción en tu computador'}"
+        f"\n\n🔧 {a.get('command')}"
+    ),
 ))
 
 async def _exec_announce_plan(arguments: dict) -> str:
