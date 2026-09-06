@@ -83,6 +83,10 @@ function renderCards(setName) {
     btn.type = "button";
     btn.className = "action-card";
     btn.dataset.cardKey = card.key;
+    // Si el espacio obliga a mostrar solo el icono (ver @container
+    // cardrail en theme.css), el title nativo del boton sigue dejando
+    // ver de que se trata al pasar el mouse.
+    btn.title = `${card.label} - ${card.desc}`;
     btn.style.animationDelay = `${i * 0.06}s`;
     btn.style.setProperty("--float-delay", `${(i % 4) * -1.4}s`);
     btn.style.setProperty("--float-duration", `${6 + (i % 3)}s`);

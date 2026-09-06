@@ -17,25 +17,110 @@ let ws = null;
 let atlasBubble = null;
 let typingBubble = null;
 
-// Si el turno actual empezo por voz (llego un "transcript"), cuando
-// termine de hablar la respuesta se vuelve a activar el microfono solo -
-// asi una conversacion hablada puede seguir de corrido sin tocar nada.
-// Si el usuario escribio en vez de hablar, no se activa el microfono
-// solo (no tiene sentido prender el mic porque escribio algo).
-let lastTurnWasVoice = false;
+// --- Modo voz continuo ---
+// Al tocar el mic por primera vez se arma "voiceLoopActive": mientras
+// siga armado, cuando termine de hablar la respuesta el mic se vuelve a
+// prender solo (conversacion hablada de corrido, sin tocar nada entre
+// frases), y ademas un detector de silencio (VAD, mas abajo) corta la
+// grabacion solo cuando detecta que el usuario dejo de hablar, sin que
+// haga falta tocar el mic para "enviar". Se apaga con la X que aparece
+// pegada al mic mientras esta armado, con "Detener", o escribiendo en
+// vez de hablar - todas formas explicitas, nunca solo.
+let voiceLoopActive = false;
+const micButtonForState = document.getElementById("mic-button");
+const micWrap = document.querySelector(".mic-wrap");
+const voiceLoopExit = document.getElementById("voice-loop-exit");
+
+function setVoiceLoopActive(active) {
+  voiceLoopActive = active;
+  micWrap.classList.toggle("loop-active", active);
+  voiceLoopExit.hidden = !active;
+}
 
 function maybeResumeListening() {
-  if (!lastTurnWasVoice || turnInFlight) return;
-  // Solo se reactiva UNA vez sola por respuesta hablada, no en cadena
-  // indefinida - si se dejara lastTurnWasVoice en true aca, cualquier
-  // palabra suelta que el microfono agarre (ruido de fondo, etc.)
-  // generaria otra respuesta hablada, que reactivaria el mic de nuevo,
-  // sin ninguna forma real de que se detenga sola.
-  lastTurnWasVoice = false;
-  const micButton = document.getElementById("mic-button");
-  if (micButton && !micButton.disabled && !micButton.classList.contains("recording")) {
-    micButton.click();
+  if (!voiceLoopActive || turnInFlight) return;
+  if (!micButtonForState.disabled && !micButtonForState.classList.contains("recording")) {
+    micButtonForState.click();
   }
+}
+
+voiceLoopExit.addEventListener("click", () => {
+  setVoiceLoopActive(false);
+  if (micButtonForState.classList.contains("recording")) {
+    micButtonForState.click();
+  }
+});
+
+// --- Deteccion de fin de frase (VAD) ---
+// face.js (protegido, no se toca) solo sabe prender/apagar la grabacion
+// con un click - no avisa cuando el usuario deja de hablar. En vez de
+// tocar esa logica, se abre un SEGUNDO stream de microfono, aparte,
+// nada mas para medir el volumen (RMS) y decidir cuando hubo silencio
+// despues de haber habido voz - al detectarlo, se hace click en el
+// mismo boton del mic, que es lo que de verdad corta+envia la
+// grabacion real (esa la sigue manejando face.js, intacta).
+const VAD_SPEECH_RMS = 0.02;
+const VAD_SILENCE_MS = 1300;
+let vadStream = null;
+let vadContext = null;
+let vadRAF = null;
+
+function stopVAD() {
+  if (vadRAF) cancelAnimationFrame(vadRAF);
+  vadRAF = null;
+  if (vadStream) {
+    vadStream.getTracks().forEach((t) => t.stop());
+    vadStream = null;
+  }
+  if (vadContext) {
+    vadContext.close().catch(() => {});
+    vadContext = null;
+  }
+}
+
+async function startVAD() {
+  stopVAD();
+  try {
+    vadStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch {
+    return; // sin VAD el usuario sigue pudiendo cortar a mano con el mic
+  }
+  vadContext = new AudioContext();
+  const source = vadContext.createMediaStreamSource(vadStream);
+  const analyser = vadContext.createAnalyser();
+  analyser.fftSize = 512;
+  source.connect(analyser);
+  const data = new Uint8Array(analyser.fftSize);
+  let hasSpeech = false;
+  let silenceStartedAt = null;
+
+  const tick = () => {
+    if (!micButtonForState.classList.contains("recording")) {
+      stopVAD();
+      return;
+    }
+    analyser.getByteTimeDomainData(data);
+    let sumSquares = 0;
+    for (let i = 0; i < data.length; i++) {
+      const v = (data[i] - 128) / 128;
+      sumSquares += v * v;
+    }
+    const rms = Math.sqrt(sumSquares / data.length);
+    if (rms > VAD_SPEECH_RMS) {
+      hasSpeech = true;
+      silenceStartedAt = null;
+    } else if (hasSpeech) {
+      if (silenceStartedAt === null) {
+        silenceStartedAt = performance.now();
+      } else if (performance.now() - silenceStartedAt > VAD_SILENCE_MS) {
+        stopVAD();
+        micButtonForState.click();
+        return;
+      }
+    }
+    vadRAF = requestAnimationFrame(tick);
+  };
+  vadRAF = requestAnimationFrame(tick);
 }
 
 // Nivel de riesgo de cada herramienta, para el emoji del primer aviso
@@ -169,7 +254,6 @@ function connect() {
   ws.onmessage = (event) => {
     const data = JSON.parse(event.data);
     if (data.type === "transcript") {
-      lastTurnWasVoice = true;
       addMessage(data.text, "user");
       typingBubble = addMessage("escribiendo…", "atlas typing");
       setTurnInFlight(true);
@@ -260,7 +344,7 @@ function connect() {
       window.dispatchEvent(new CustomEvent("atlas:subagent", { detail: { phase: "done", agent: data.agent_name } }));
       setAtlasState("ejecutando");
     } else if (data.type === "stopped") {
-      lastTurnWasVoice = false;
+      setVoiceLoopActive(false);
       clearTyping();
       atlasBubble = null;
       setTurnInFlight(false);
@@ -294,7 +378,7 @@ form.addEventListener("submit", (e) => {
   e.preventDefault();
   const text = input.value.trim();
   if (!text && !pendingAttachment) return;
-  lastTurnWasVoice = false;
+  setVoiceLoopActive(false);
   const payload = { type: "text", text };
   if (pendingAttachment) payload.attachment = pendingAttachment;
   if (!sendMessage(payload)) return;
@@ -353,11 +437,11 @@ fileInput.addEventListener("change", () => {
 attachmentRemoveBtn.addEventListener("click", clearAttachment);
 
 stopButton.addEventListener("click", () => {
-  // "Detener" ahora tambien sirve como el boton para cortar el modo voz:
-  // si el microfono esta escuchando, lo apaga (dispara stopRecording en
+  // "Detener" ademas sirve como salida de emergencia del modo voz: si
+  // el microfono esta escuchando, lo apaga (dispara stopRecording en
   // face.js) y se asegura de que no se vuelva a prender solo despues.
   if (micButtonForState.classList.contains("recording")) {
-    lastTurnWasVoice = false;
+    setVoiceLoopActive(false);
     micButtonForState.click();
   }
   sendMessage({ type: "stop" });
@@ -365,10 +449,18 @@ stopButton.addEventListener("click", () => {
 
 // El estado "escuchando" se deriva observando la clase "recording" que
 // face.js ya prende/apaga por su cuenta en el boton del mic - no se
-// toca esa logica, solo se mira desde afuera.
-const micButtonForState = document.getElementById("mic-button");
+// toca esa logica, solo se mira desde afuera. Este mismo observer
+// tambien arma el modo voz continuo la primera vez que el usuario toca
+// el mic, y prende/corta el detector de silencio (VAD) junto con cada
+// grabacion real.
 new MutationObserver(() => {
   const recording = micButtonForState.classList.contains("recording");
+  if (recording) {
+    if (!voiceLoopActive) setVoiceLoopActive(true);
+    startVAD();
+  } else {
+    stopVAD();
+  }
   // "Detener" antes solo se habilitaba con un turno en curso en el
   // servidor - mientras el mic estaba escuchando (todavia nada enviado)
   // se quedaba deshabilitado, sin ninguna forma visible de cortar la

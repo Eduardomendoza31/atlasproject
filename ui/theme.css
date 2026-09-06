@@ -50,9 +50,30 @@ button {
   grid-template-columns: 240px 1fr 280px;
   grid-template-rows: 100vh;
   gap: 0;
+  /* El degradado radial (mas grande y suave que antes) crea una linea
+     recta clarita hacia los ~60% de su radio - no es un objeto real
+     tapando nada, es "banding" (el cambio de color es tan lento que la
+     pantalla no tiene suficiente profundidad de color para mostrarlo
+     parejo). Confirmado sacando el degradado por completo: la linea
+     desaparecia. Se agranda el radio y se baja la opacidad (cambia mas
+     lento por pixel = menos banding), y ademas se le pone encima una
+     textura de ruido finita (position:fixed, ::after de aca abajo) que
+     es la forma estandar de evitar el banding en degradados oscuros. */
   background:
-    radial-gradient(1200px 600px at 50% -10%, rgba(109, 93, 240, 0.14), transparent 60%),
+    radial-gradient(1700px 900px at 50% -10%, rgba(109, 93, 240, 0.09), transparent 75%),
     var(--bg-0);
+  position: relative;
+}
+
+.app-shell::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 999;
+  opacity: 0.03;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
 /* ---------- Sidebar ---------- */
@@ -469,6 +490,22 @@ button {
   color: var(--text-2);
 }
 
+/* Cuando el riel de tarjetas queda muy bajo (ventana chica), ya no
+   alcanza ni achicando la letra al minimo legible - en vez de seguir
+   apretando texto ilegible, se pasa a mostrar solo el icono, centrado,
+   como un boton redondo chico. Sigue siendo clickeable igual (el título
+   real queda accesible via el atributo title del boton). */
+@container cardrail (max-height: 210px) {
+  .action-card-title, .action-card-desc, .action-card-arrow { display: none; }
+  .action-card-top { justify-content: center; }
+  .action-card {
+    padding: 8px;
+    border-radius: 999px;
+    width: fit-content;
+  }
+  .action-card .icon { width: 26px; height: 26px; margin: 0; }
+}
+
 @keyframes card-in {
   from { opacity: 0; transform: translateY(10px) scale(0.97); }
   to { opacity: 1; transform: translateY(0) scale(1); }
@@ -825,28 +862,28 @@ body[data-atlas-state="escuchando"] .card-rail {
 .attachment-chip[hidden] { display: none; }
 
 .attachment-chip {
+  /* Antes era un elemento aparte flotando arriba del composer, con su
+     propio fondo/blur/sombra (como si fuera otro panel). Ahora vive
+     COMO UN ITEM MAS adentro de la barra del composer (junto al clip y
+     el mic), asi que es una etiqueta chica que combina con esa barra
+     en vez de duplicar su estilo de panel. */
   position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
-  width: fit-content;
-  max-width: min(480px, calc(100% - 44px));
-  margin: 0 auto 14px;
-  padding: 8px 14px;
-  background: var(--panel-bg);
-  box-shadow: var(--card-glow);
-  border: 1px solid var(--panel-border);
-  border-radius: 12px;
-  backdrop-filter: blur(12px);
+  gap: 6px;
+  flex-shrink: 0;
+  max-width: 150px;
+  padding: 5px 10px;
+  background: rgba(126, 232, 250, 0.1);
+  border-radius: 999px;
   color: var(--accent-2);
-  font-size: 12px;
+  font-size: 11.5px;
 }
 
-.attachment-chip svg { width: 14px; height: 14px; flex-shrink: 0; }
+.attachment-chip svg { width: 13px; height: 13px; flex-shrink: 0; }
 
 #attachment-name {
   color: var(--text-0);
-  max-width: 260px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -899,6 +936,45 @@ body[data-atlas-state="escuchando"] .card-rail {
   background: var(--danger);
   color: white;
 }
+
+/* ---------- Modo voz continuo ---------- */
+
+.mic-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+/* Mientras el "modo voz" queda armado (sigue escuchando de corrido sin
+   que el usuario tenga que volver a tocar el mic entre frases), el
+   propio boton del mic se nota con un anillo suave - no hace falta
+   ningun boton nuevo para "avisar" que esta en ese modo. */
+.mic-wrap.loop-active #mic-button:not(.recording) {
+  box-shadow: inset 0 0 0 1px rgba(126, 232, 250, 0.25), 0 0 0 3px rgba(126, 232, 250, 0.18);
+}
+
+/* La X para salir del modo voz - misma insignia de esquina que la del
+   archivo adjunto, pero solo visible mientras el modo esta armado, asi
+   que no es "un boton feo mas" que este siempre ahi estorbando. */
+#voice-loop-exit {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--bg-0);
+  border-radius: 50%;
+  background: var(--panel-bg);
+  color: var(--text-1);
+  cursor: pointer;
+  box-shadow: var(--card-glow);
+}
+
+#voice-loop-exit[hidden] { display: none; }
+#voice-loop-exit svg { width: 9px; height: 9px; }
+#voice-loop-exit:hover { background: var(--danger); color: white; }
 
 #input:disabled,
 #composer button:disabled {
