@@ -1205,6 +1205,14 @@ body[data-atlas-state="escuchando"] .card-rail {
   .agents-list { display: none; }
   .stage-center { grid-template-columns: 1fr; }
   .card-rail { display: none; }
+  /* .stage-center pasa a una sola columna aca, pero .face-stage seguia
+     fijo en "grid-column: 2" (el valor de la version ancha) - sin
+     columna 2 explicita, el grid crea una columna implicita casi vacia
+     para el rostro y deja la columna 1fr real vacia (pantalla negra).
+     Mismo tipo de bug que el de Fase 6 con display:none en items de
+     grid, pero al reves: el hijo no se actualizo cuando el padre
+     cambio de columnas. */
+  .face-stage { grid-column: 1; }
 }
 
 @media (max-width: 560px) {
