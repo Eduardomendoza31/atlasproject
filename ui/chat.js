@@ -26,6 +26,12 @@ let lastTurnWasVoice = false;
 
 function maybeResumeListening() {
   if (!lastTurnWasVoice || turnInFlight) return;
+  // Solo se reactiva UNA vez sola por respuesta hablada, no en cadena
+  // indefinida - si se dejara lastTurnWasVoice en true aca, cualquier
+  // palabra suelta que el microfono agarre (ruido de fondo, etc.)
+  // generaria otra respuesta hablada, que reactivaria el mic de nuevo,
+  // sin ninguna forma real de que se detenga sola.
+  lastTurnWasVoice = false;
   const micButton = document.getElementById("mic-button");
   if (micButton && !micButton.disabled && !micButton.classList.contains("recording")) {
     micButton.click();
@@ -347,6 +353,13 @@ fileInput.addEventListener("change", () => {
 attachmentRemoveBtn.addEventListener("click", clearAttachment);
 
 stopButton.addEventListener("click", () => {
+  // "Detener" ahora tambien sirve como el boton para cortar el modo voz:
+  // si el microfono esta escuchando, lo apaga (dispara stopRecording en
+  // face.js) y se asegura de que no se vuelva a prender solo despues.
+  if (micButtonForState.classList.contains("recording")) {
+    lastTurnWasVoice = false;
+    micButtonForState.click();
+  }
   sendMessage({ type: "stop" });
 });
 
@@ -355,6 +368,12 @@ stopButton.addEventListener("click", () => {
 // toca esa logica, solo se mira desde afuera.
 const micButtonForState = document.getElementById("mic-button");
 new MutationObserver(() => {
+  const recording = micButtonForState.classList.contains("recording");
+  // "Detener" antes solo se habilitaba con un turno en curso en el
+  // servidor - mientras el mic estaba escuchando (todavia nada enviado)
+  // se quedaba deshabilitado, sin ninguna forma visible de cortar la
+  // escucha. Ahora tambien se habilita mientras esta grabando.
+  stopButton.disabled = !(turnInFlight || recording);
   if (turnInFlight) return; // no pisar un estado de turno real en curso
-  setAtlasState(micButtonForState.classList.contains("recording") ? "escuchando" : "listo");
+  setAtlasState(recording ? "escuchando" : "listo");
 }).observe(micButtonForState, { attributes: true, attributeFilter: ["class"] });

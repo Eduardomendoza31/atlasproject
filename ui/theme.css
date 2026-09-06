@@ -323,10 +323,16 @@ button {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 16px;
+  gap: clamp(6px, 2.5cqh, 16px);
   min-width: 0;
   min-height: 0;
-  overflow-y: auto;
+  /* Antes con overflow-y:auto aparecia una barra de scroll cuando las
+     3 tarjetas + textos no entraban en el alto real del riel. En vez
+     de dejar que scrollee, las tarjetas se achican (padding/fuente via
+     cqh, ver .action-card mas abajo) para entrar siempre completas. */
+  overflow: hidden;
+  container-type: size;
+  container-name: cardrail;
   transition: opacity 0.25s ease;
 }
 
@@ -343,19 +349,20 @@ button {
 .action-card {
   position: relative;
   display: block;
-  /* Sin esto, cuando el rail (columna) no tiene alto suficiente para
-     las 3 tarjetas, flexbox las encoge en vez de dejar que el rail
-     scrollee (.card-rail ya tiene overflow-y:auto) - encogida, el
-     titulo/descripcion quedaban invisibles por el overflow:hidden de
-     aca abajo, sin verse ningun error, solo el icono suelto. */
+  /* Sin esto, flexbox podia encoger la tarjeta por debajo de lo que
+     necesita su propio contenido. Ya no depende de eso para caber: el
+     padding/fuente de aca abajo se calculan en cqh (contra el alto real
+     de .card-rail), asi que la tarjeta ya "nace" del tamaño correcto
+     para las 2-3 que haya, sin necesitar que flexbox la comprima ni que
+     el riel scrollee. */
   flex-shrink: 0;
   background: linear-gradient(165deg, rgba(126, 232, 250, 0.05), var(--panel-bg) 40%);
   box-shadow: var(--card-glow);
   border: 1px solid var(--panel-border);
   border-radius: 14px;
-  padding: 12px 14px;
+  padding: clamp(6px, 3.2cqh, 12px) clamp(8px, 4cqh, 14px);
   color: var(--text-0);
-  font-size: 12.5px;
+  font-size: clamp(10px, 3.4cqh, 12.5px);
   text-align: left;
   cursor: pointer;
   backdrop-filter: blur(14px);
@@ -381,7 +388,7 @@ button {
 .action-card-inner {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: clamp(2px, 1.2cqh, 6px);
   animation: card-float var(--float-duration, 7s) ease-in-out infinite;
   animation-delay: var(--float-delay, 0s);
 }
@@ -412,8 +419,8 @@ button {
 }
 
 .action-card .icon {
-  width: 32px;
-  height: 32px;
+  width: clamp(20px, 9cqh, 32px);
+  height: clamp(20px, 9cqh, 32px);
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -452,13 +459,13 @@ button {
 .action-card-title {
   display: block;
   font-weight: 600;
-  font-size: 12.5px;
+  font-size: clamp(10px, 3.4cqh, 12.5px);
   color: var(--text-0);
 }
 
 .action-card-desc {
   display: block;
-  font-size: 10.5px;
+  font-size: clamp(8px, 2.6cqh, 10.5px);
   color: var(--text-2);
 }
 
@@ -809,18 +816,27 @@ body[data-atlas-state="escuchando"] .card-rail {
 
 /* ---------- Chip de archivo adjunto ---------- */
 
+/* [hidden] tiene que ganarle explicitamente al display:flex de aca
+   abajo - a igual especificidad, la regla del autor (esta) le gana al
+   estilo por defecto del user-agent para [hidden], asi que sin esto el
+   chip se veia siempre (icono + X sueltos) aunque no hubiera ningun
+   archivo adjunto todavia. Mismo tipo de bug ya documentado en Fase 6
+   para otros componentes con su propio display fijo. */
+.attachment-chip[hidden] { display: none; }
+
 .attachment-chip {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
   width: fit-content;
   max-width: min(480px, calc(100% - 44px));
-  margin: 0 auto 8px;
-  padding: 6px 8px 6px 12px;
+  margin: 0 auto 14px;
+  padding: 8px 14px;
   background: var(--panel-bg);
   box-shadow: var(--card-glow);
   border: 1px solid var(--panel-border);
-  border-radius: 999px;
+  border-radius: 12px;
   backdrop-filter: blur(12px);
   color: var(--accent-2);
   font-size: 12px;
@@ -836,22 +852,29 @@ body[data-atlas-state="escuchando"] .card-rail {
   white-space: nowrap;
 }
 
+/* La X para quitar el archivo va como una insignia en la esquina del
+   chip (superpuesta), no como un boton mas adentro de la fila - antes
+   vivia adentro de la fila como un boton comun, ahora se despega
+   visualmente del nombre del archivo. */
 #attachment-remove {
+  position: absolute;
+  top: -7px;
+  right: -7px;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
-  border: none;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--bg-0);
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text-1);
+  background: var(--danger);
+  color: white;
   cursor: pointer;
   flex-shrink: 0;
 }
 
 #attachment-remove svg { width: 10px; height: 10px; }
-#attachment-remove:hover { background: var(--danger); color: white; }
+#attachment-remove:hover { filter: brightness(1.15); }
 
 #composer button[type="submit"] {
   background: var(--accent);
@@ -886,7 +909,13 @@ body[data-atlas-state="escuchando"] .card-rail {
 /* ---------- Chat log ---------- */
 
 #chat {
-  width: min(560px, calc(100% - 44px));
+  /* Antes tenia el mismo ancho chico del composer (560px) - las
+     respuestas largas (planes, informes, delegaciones) quedaban
+     amontonadas en una columna angosta en medio de mucho espacio vacio
+     a los lados. Ahora usa todo el ancho real disponible entre el
+     rostro/tarjetas y el borde del panel; el composer de abajo sigue
+     chico y centrado a proposito (ver #composer), eso no cambia. */
+  width: calc(100% - 24px);
   margin: 0 auto 10px;
   /* Antes 200px, de cuando los mensajes eran casi todos de una linea.
      Con planes anunciados, delegaciones a agentes e informes de
