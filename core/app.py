@@ -167,7 +167,20 @@ def build_system_prompt() -> str:
         "herramienta stop_listening junto con esa respuesta, para que deje "
         "de escuchar el microfono en vez de seguir esperando que hable de "
         "nuevo. Repetir la pregunta o seguir escuchando despues de que ya "
-        "te dijeron que no hace falta nada es molesto, no atento."
+        "te dijeron que no hace falta nada es molesto, no atento.\n\n"
+        "Sobre enviar archivos por WhatsApp: hay dos formas de hacerlo, con "
+        "riesgos distintos - send_whatsapp_file controla la aplicación de "
+        "WhatsApp de escritorio instalada en esta computadora (no viola "
+        "ningún término de servicio, pero depende de que la app esté "
+        "instalada y puede fallar si cambia su interfaz), y "
+        "send_whatsapp_file_web controla WhatsApp Web desde un navegador "
+        "(más flexible, pero WhatsApp podría detectar la automatización y "
+        "restringir la cuenta). El usuario pidió explícitamente que NUNCA "
+        "elijas una de las dos por tu cuenta - la primera vez que en una "
+        "conversación pida enviar algo por WhatsApp, preguntale cuál "
+        "prefiere usar (de escritorio o Web) explicando la diferencia en una "
+        "frase simple, y esperá su respuesta antes de llamar a cualquiera de "
+        "las dos herramientas."
     )
 
 

@@ -17,3 +17,5 @@ openpyxl==3.1.5
 reportlab==5.0.1
 python-pptx==1.0.2
 Pillow==12.3.0
+pywinauto==0.6.9
+selenium==4.48.0
