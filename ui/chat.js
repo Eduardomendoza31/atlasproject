@@ -458,6 +458,16 @@ function connect() {
       addMessage(`${data.agent_name} completó su tarea: ${data.result}`, "atlas subagent-result");
       window.dispatchEvent(new CustomEvent("atlas:subagent", { detail: { phase: "done", agent: data.agent_name } }));
       setAtlasState("ejecutando");
+    } else if (data.type === "project_switched") {
+      // Se reemplaza el chat visible por el historial real guardado de
+      // este proyecto (ver core/projects.py) - los mensajes se
+      // guardan como texto simple (usuario/respuesta final, sin los
+      // pasos intermedios de herramientas), asi que se pueden mostrar
+      // directo, igual que cualquier burbuja normal.
+      chatEl.innerHTML = "";
+      data.messages.forEach((m) => addMessage(m.content, m.role === "user" ? "user" : "atlas"));
+      addMessage(`📁 Proyecto activo: ${data.project.name}`, "atlas project-switch");
+      window.dispatchEvent(new CustomEvent("atlas:project", { detail: data.project }));
     } else if (data.type === "stopped") {
       setVoiceLoopActive(false);
       clearTyping();

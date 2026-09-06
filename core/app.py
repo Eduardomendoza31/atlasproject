@@ -8,6 +8,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from core.agent import run_agent_turn
 from core.automations import list_automations, scheduler_loop
 from core.config import USER_NAME
+from core.projects import (
+    append_message as append_project_message,
+    find_project_by_name,
+    get_project,
+    list_projects,
+    load_project_history,
+)
 from core.skills import installed_skills, load_all as load_skills
 from core.subagents import list_subagents
 from core.tools import RUN_COMMAND_UI_OUTPUT_CAP, TOOLS, Tool
@@ -262,6 +269,16 @@ async def get_automations():
     }
 
 
+@app.get("/projects")
+async def get_projects():
+    return {
+        "projects": [
+            {"id": p.id, "name": p.name, "description": p.description}
+            for p in list_projects()
+        ]
+    }
+
+
 @app.on_event("startup")
 async def _start_automations_scheduler() -> None:
     # Tarea de fondo de por vida (no un asyncio.create_task suelto en
@@ -275,11 +292,20 @@ async def _run_turn(
     history: list[dict],
     user_text: str,
     pending_confirmations: dict[str, asyncio.Future],
+    session_state: dict,
 ) -> None:
     """Corre un turno completo (posiblemente con varias idas y vueltas de
     herramientas) como una tarea de fondo, para que el loop principal del
     websocket pueda seguir escuchando mensajes (una cancelacion, o una
-    respuesta de confirmacion) mientras el turno esta en curso."""
+    respuesta de confirmacion) mientras el turno esta en curso.
+
+    `session_state` es un dict mutable compartido con `chat()` (mismo
+    truco que ya se usa con `history`: al ser mutable, los cambios de
+    aca se ven del otro lado sin tener que devolver nada) - por ahora
+    solo guarda `active_project_id`, para que un tool_call de
+    switch_project pueda cambiar el proyecto activo de la conexion sin
+    que las tools necesiten acceso directo al estado de la conexion
+    (ver skills/projects.py)."""
     context = await relevant_context(user_text)
     print(f"[Cortex] contexto para {user_text!r}: {context!r}", flush=True)
     messages = history.copy()
@@ -289,13 +315,12 @@ async def _run_turn(
     # esperable), esa hora se queda vieja enseguida y el modelo termina
     # inventando una si el usuario pregunta que hora es. Esto se manda
     # de nuevo, fresco, en CADA turno.
-    messages.insert(
-        -1,
-        {
-            "role": "system",
-            "content": f"Ahora mismo son las {_hora_actual_es()} del {_fecha_actual_es()}.",
-        },
-    )
+    active_project_id = session_state.get("active_project_id")
+    active_project = get_project(active_project_id) if active_project_id else None
+    time_note = f"Ahora mismo son las {_hora_actual_es()} del {_fecha_actual_es()}."
+    if active_project:
+        time_note += f" Proyecto activo: {active_project.name}."
+    messages.insert(-1, {"role": "system", "content": time_note})
     if context:
         messages.insert(-1, {"role": "system", "content": context})
 
@@ -320,6 +345,15 @@ async def _run_turn(
                     "name": event["name"],
                     "arguments": event["arguments"],
                 })
+                if event["name"] == "switch_project":
+                    # El cambio real se aplica recien cuando el turno
+                    # actual termina limpio (mas abajo), no aca mismo -
+                    # tocar `messages`/`history` a mitad del loop de
+                    # tools rompería la secuencia tool_call/tool_result
+                    # que la API espera.
+                    project = find_project_by_name(event["arguments"].get("name", ""))
+                    if project:
+                        session_state["pending_switch_to"] = project.id
             elif etype == "tool_confirm_needed":
                 await websocket.send_json({
                     "type": "tool_confirm_request",
@@ -391,6 +425,27 @@ async def _run_turn(
     await websocket.send_json({"type": "done"})
     _save_to_memory_in_background(user_text, reply_text)
 
+    # Se guarda solo el intercambio real (texto del usuario + respuesta
+    # final), no los pasos intermedios de tools ni los mensajes de
+    # sistema efimeros (fecha/hora, contexto) que se insertan arriba en
+    # cada turno - mismo criterio que memory/cortex.py ya usa para
+    # decidir que vale la pena recordar, aplicado aca a la conversacion
+    # del proyecto en vez de al vault.
+    if active_project_id:
+        append_project_message(active_project_id, "user", user_text)
+        append_project_message(active_project_id, "assistant", reply_text)
+
+    if pending_id := session_state.pop("pending_switch_to", None):
+        session_state["active_project_id"] = pending_id
+        new_project = get_project(pending_id)
+        project_history = load_project_history(pending_id)
+        history[:] = [history[0], *project_history]
+        await websocket.send_json({
+            "type": "project_switched",
+            "project": {"id": new_project.id, "name": new_project.name},
+            "messages": project_history,
+        })
+
     try:
         audio_reply = await synthesize(reply_text)
         await websocket.send_json(
@@ -409,6 +464,10 @@ async def chat(websocket: WebSocket):
     history: list[dict] = [{"role": "system", "content": build_system_prompt()}]
     current_turn_task: asyncio.Task | None = None
     pending_confirmations: dict[str, asyncio.Future] = {}
+    # Ver el docstring de _run_turn: dict mutable compartido, para que
+    # un tool_call de switch_project pueda avisar el cambio de proyecto
+    # sin que las tools tengan acceso directo al estado de la conexion.
+    session_state: dict = {"active_project_id": None}
 
     try:
         while True:
@@ -418,6 +477,35 @@ async def chat(websocket: WebSocket):
             if msg_type == "stop":
                 if current_turn_task and not current_turn_task.done():
                     current_turn_task.cancel()
+                continue
+
+            if msg_type == "switch_project":
+                # Cambio de proyecto disparado desde la UI (click en el
+                # panel de Proyectos), no desde el modelo - mismo efecto
+                # que el tool switch_project, pero sin pasar por un
+                # turno de chat. Se bloquea mientras hay un turno en
+                # curso, igual que cualquier otra accion que toque
+                # `history`.
+                if current_turn_task and not current_turn_task.done():
+                    await websocket.send_json(
+                        {"type": "error", "text": "Ya hay un turno en curso."}
+                    )
+                    continue
+                project_id = incoming.get("project_id")
+                project = get_project(project_id) if project_id else None
+                if not project:
+                    await websocket.send_json(
+                        {"type": "error", "text": "No encontré ese proyecto."}
+                    )
+                    continue
+                session_state["active_project_id"] = project.id
+                project_history = load_project_history(project.id)
+                history[:] = [history[0], *project_history]
+                await websocket.send_json({
+                    "type": "project_switched",
+                    "project": {"id": project.id, "name": project.name},
+                    "messages": project_history,
+                })
                 continue
 
             if msg_type == "tool_confirm_response":
@@ -485,7 +573,7 @@ async def chat(websocket: WebSocket):
 
             history.append({"role": "user", "content": user_content})
             current_turn_task = asyncio.create_task(
-                _run_turn(websocket, history, user_text, pending_confirmations)
+                _run_turn(websocket, history, user_text, pending_confirmations, session_state)
             )
     except WebSocketDisconnect:
         if current_turn_task and not current_turn_task.done():

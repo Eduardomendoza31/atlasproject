@@ -171,6 +171,60 @@ async function loadAutomations() {
 
 loadAutomations();
 
+// --- Proyectos: reales, vienen de core/projects.py (SQLite). Se crean
+// hablando con Atlas o con el formulario chico de aca abajo (que en el
+// fondo manda el mismo mensaje de texto que si el usuario lo hubiera
+// escrito - no hay un camino "directo" aparte, mismo criterio ya usado
+// para Automatizaciones: todo pasa por el chat real). Cambiar de
+// proyecto SI tiene un camino directo (switch_project por websocket,
+// ver core/app.py) porque no modifica nada, solo cambia que
+// conversacion se esta mirando.
+const projectsListEl = document.getElementById("projects-list");
+let activeProjectId = null;
+
+async function loadProjects() {
+  try {
+    const res = await fetch("http://127.0.0.1:8731/projects");
+    const data = await res.json();
+    const projects = data.projects || [];
+    if (projects.length === 0) {
+      projectsListEl.innerHTML = '<li class="panel-empty">No hay proyectos creados todavía.</li>';
+      return;
+    }
+    projectsListEl.innerHTML = "";
+    projects.forEach((p) => {
+      const li = document.createElement("li");
+      li.className = "skill-item project-item" + (p.id === activeProjectId ? " active" : "");
+      li.dataset.projectId = p.id;
+      li.innerHTML = `<span class="entry-icon">${icon("folders")}</span><span><strong>${p.name}</strong>${p.description ? `<br><span class="skill-desc">${p.description}</span>` : ""}</span>`;
+      li.addEventListener("click", () => {
+        if (turnInFlight) return;
+        sendMessage({ type: "switch_project", project_id: p.id });
+      });
+      projectsListEl.appendChild(li);
+    });
+  } catch {
+    projectsListEl.innerHTML = '<li class="panel-empty">No hay proyectos creados todavía.</li>';
+  }
+}
+
+loadProjects();
+
+window.addEventListener("atlas:project", (e) => {
+  activeProjectId = e.detail.id;
+  loadProjects();
+});
+
+document.getElementById("new-project-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const nameInput = document.getElementById("new-project-name");
+  const name = nameInput.value.trim();
+  if (!name || turnInFlight) return;
+  input.value = `Crea un proyecto llamado "${name}".`;
+  form.requestSubmit();
+  nameInput.value = "";
+});
+
 // --- Barra de accesos rapidos: mandan una instruccion en lenguaje
 // natural, Atlas decide usar run_command (y el usuario confirma, como
 // con cualquier herramienta critica) - no se salta el flujo existente.
@@ -237,7 +291,7 @@ async function showAvailableTools() {
 }
 
 const NAV_ACTIONS = {
-  proyectos: () => addMessage("Proyectos todavía no está construido.", "atlas"),
+  proyectos: () => flashPanel("Proyectos"),
   skills: () => flashPanel("Skills"),
   automatizaciones: () => flashPanel("Automatizaciones"),
   archivos: () => sendQuickPrompt(QUICK_ACTIONS.find((q) => q.key === "explorer").prompt),
@@ -323,6 +377,7 @@ const META_TOOLS = new Set(["announce_plan", "report_outcome"]);
 // haber cambiado (se creo, se borro, o se activo/pauso una) - se vuelve
 // a pedir la lista real en vez de dejar el panel desactualizado.
 const AUTOMATION_TOOLS = new Set(["create_automation", "delete_automation", "set_automation_enabled"]);
+const PROJECT_TOOLS = new Set(["create_project"]);
 
 // Mientras un agente especializado esta trabajando (delegate_to_agent),
 // sus propias llamadas a herramientas no deben pisar el cartel de
@@ -370,6 +425,9 @@ window.addEventListener("atlas:tool", (e) => {
     }
     if (!d.denied && AUTOMATION_TOOLS.has(d.name)) {
       loadAutomations();
+    }
+    if (!d.denied && PROJECT_TOOLS.has(d.name)) {
+      loadProjects();
     }
   }
 });
