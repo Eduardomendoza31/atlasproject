@@ -54,6 +54,33 @@ def _save_to_memory_in_background(user_text: str, reply: str) -> None:
     task.add_done_callback(_on_done)
 
 
+def _send_confirm_audio_in_background(websocket: WebSocket, confirm_id: str, spoken_text: str) -> None:
+    # A proposito NO se espera (await) esto en linea antes de seguir -
+    # la sintetizacion de audio tarda un momento, y el generador de
+    # run_agent_turn recien registra el Future de la confirmacion
+    # (pending_confirmations) cuando se le pide el SIGUIENTE evento. Si
+    # este audio bloqueara ese paso, una respuesta del usuario (click o
+    # voz) que llegara justo en esa ventana no encontraria ningun
+    # Future esperando y se perderia en silencio. Corriendo esto en
+    # segundo plano, el turno sigue de largo y registra el Future de
+    # inmediato; el audio de la pregunta llega un instante despues,
+    # sin bloquear nada.
+    async def _run() -> None:
+        try:
+            audio = await synthesize(spoken_text)
+            await websocket.send_json({
+                "type": "confirm_audio",
+                "id": confirm_id,
+                "data": base64.b64encode(audio).decode("ascii"),
+            })
+        except Exception as exc:
+            print(f"[Voz] Fallo al generar audio de confirmacion: {exc}", flush=True)
+
+    task = asyncio.create_task(_run())
+    background_tasks.add(task)
+    task.add_done_callback(background_tasks.discard)
+
+
 _MESES_ES = [
     "enero", "febrero", "marzo", "abril", "mayo", "junio",
     "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
@@ -301,6 +328,22 @@ async def _run_turn(
                     "tier": event["tier"],
                     "description": event["description"],
                 })
+                # La confirmacion se mostraba solo en pantalla - si el
+                # usuario esta en una conversacion por voz (sin mirar
+                # la pantalla), no tenia forma de saber que Atlas
+                # estaba esperando su si/no. Se sintetiza tambien en
+                # audio, usando solo la parte en español simple de la
+                # descripcion (sin el "🔧 comando" tecnico, ver
+                # core/tools.py) convertida en pregunta.
+                marker = "\n\n🔧 "
+                marker_index = event["description"].find(marker)
+                spoken_part = (
+                    event["description"] if marker_index == -1
+                    else event["description"][:marker_index]
+                )
+                _send_confirm_audio_in_background(
+                    websocket, event["id"], f"{spoken_part}. ¿Confirmás?"
+                )
             elif etype == "tool_result":
                 result = event["result"]
                 if event["name"] == "run_command" and len(result) > RUN_COMMAND_UI_OUTPUT_CAP:

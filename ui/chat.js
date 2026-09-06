@@ -179,6 +179,7 @@ fetch("http://127.0.0.1:8731/tools")
 let turnInFlight = false;
 let pendingConfirmId = null;
 let pendingConfirmBubbleEl = null;
+let pendingConfirmWasVoice = false;
 
 // Palabras sueltas para interpretar un "si"/"no" hablado como respuesta
 // a una confirmacion, sin necesitar una frase exacta. Deliberadamente
@@ -288,13 +289,22 @@ function addConfirmBubble({ id, name, tier, description }) {
   // confirmacion hablando ("sí"/"no") en vez de tener que tocar un
   // boton - setComposerEnabled(false) de arriba deja el mic
   // deshabilitado como el resto del composer, asi que aca se reactiva
-  // solo para este caso puntual.
+  // solo para este caso puntual. El mic se prende recien cuando termine
+  // de sonar la pregunta hablada (evento "confirm_audio" mas abajo) -
+  // si se prendiera de una, se grabaria la propia voz de Atlas
+  // preguntando. Si esta silenciado no hay audio que esperar, asi que
+  // se prende enseguida.
+  pendingConfirmWasVoice = wasVoiceLoop;
   if (wasVoiceLoop) {
     micButtonForState.disabled = false;
-    setTimeout(() => {
-      if (!micButtonForState.classList.contains("recording")) micButtonForState.click();
-    }, 500);
+    if (ttsMuted) listenForConfirmAnswer();
   }
+}
+
+function listenForConfirmAnswer() {
+  setTimeout(() => {
+    if (!micButtonForState.classList.contains("recording")) micButtonForState.click();
+  }, 300);
 }
 
 function resolveConfirm(id, approved, bubbleEl) {
@@ -410,6 +420,18 @@ function connect() {
         description: data.description,
       });
       setAtlasState("autorizacion");
+    } else if (data.type === "confirm_audio") {
+      if (ttsMuted) {
+        if (pendingConfirmWasVoice) listenForConfirmAnswer();
+        return;
+      }
+      const confirmAudio = new Audio(`data:audio/mpeg;base64,${data.data}`);
+      confirmAudio.addEventListener("play", () => setAtlasState("hablando"));
+      confirmAudio.addEventListener("ended", () => {
+        setAtlasState("autorizacion");
+        if (pendingConfirmWasVoice) listenForConfirmAnswer();
+      });
+      playWithLipSync(confirmAudio);
     } else if (data.type === "tool_result") {
       // announce_plan/report_outcome ya mostraron su propio mensaje al
       // llegar como tool_call (con los datos reales del plan/resultado) -
