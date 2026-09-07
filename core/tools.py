@@ -20,6 +20,8 @@ from typing import Awaitable, Callable
 from ddgs import DDGS
 from ddgs.exceptions import DDGSException
 
+from core.documents import can_extract, extract_text
+
 RiskTier = str  # "safe" | "sensitive" | "critical"
 
 READ_FILE_MAX_BYTES = 200_000
@@ -88,12 +90,27 @@ def resolve_path(raw: str) -> Path:
 async def _exec_read_file(arguments: dict) -> str:
     raw_path = arguments["path"]
     path = resolve_path(raw_path)
+
+    if not path.exists():
+        return f"Error: el archivo '{raw_path}' no existe."
+    if path.is_dir():
+        return f"Error: '{raw_path}' es un directorio, no un archivo."
+
+    if can_extract(path):
+        # PDF/DOCX/XLSX/CSV/PPTX/HTML: no son texto plano, pero Atlas sabe
+        # extraerles el texto (ver core/documents/) - antes de esto,
+        # read_file los rechazaba como "binario" sin siquiera intentarlo.
+        try:
+            text = extract_text(path)
+        except Exception as exc:
+            return f"Error: no pude leer '{raw_path}': {exc}"
+        truncated = len(text) > READ_FILE_MAX_BYTES
+        text = text[:READ_FILE_MAX_BYTES]
+        prefix = f"[documento truncado a {READ_FILE_MAX_BYTES} caracteres]\n" if truncated else ""
+        return prefix + text
+
     try:
         data = path.read_bytes()
-    except FileNotFoundError:
-        return f"Error: el archivo '{raw_path}' no existe."
-    except IsADirectoryError:
-        return f"Error: '{raw_path}' es un directorio, no un archivo."
     except OSError as exc:
         return f"Error: no pude leer '{raw_path}': {exc}"
 
@@ -208,7 +225,12 @@ async def _exec_web_search(arguments: dict) -> str:
 
 register(Tool(
     name="read_file",
-    description="Lee el contenido de un archivo de texto del computador del usuario.",
+    description=(
+        "Lee el contenido de un archivo del computador del usuario: texto "
+        "plano, o documentos reales (PDF, Word .docx, Excel .xlsx, CSV, "
+        "PowerPoint .pptx, HTML) - de estos últimos extrae el texto real. "
+        "No puede leer PDFs escaneados (solo imágenes, sin texto) todavía."
+    ),
     parameters={
         "type": "object",
         "properties": {
