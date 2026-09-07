@@ -1,6 +1,6 @@
 from core.providers import complete
-from memory.semantic import semantic_search
-from memory.store import list_notes_by_tag, save_note, search_notes
+from memory.search import hybrid_search
+from memory.store import list_notes_by_tag, save_note
 
 RULE_TAG = "regla"
 
@@ -41,19 +41,14 @@ async def relevant_context(user_text: str) -> str:
     el usuario pidio recordar SIEMPRE van (no dependen de si el mensaje
     actual se parece semanticamente a ellas - una regla como "los PDF
     van a Documentacion" debe aplicar aunque el usuario no diga "PDF"),
-    mas las notas relacionadas con lo que acaba de decir (por
-    significado, no por palabra exacta). Si la busqueda semantica falla
-    (p. ej. la API de embeddings no responde), cae a busqueda por
-    palabras en vez de dejar al modelo sin nada."""
+    mas las notas relacionadas con lo que acaba de decir segun busqueda
+    hibrida (significado + palabras clave combinados, ver
+    memory/search.py) - no una sola de las dos como antes."""
     rules = list_notes_by_tag(RULE_TAG)
-    try:
-        notes = await semantic_search(user_text)
-    except Exception as exc:
-        print(f"[Cortex] Fallo la busqueda semantica, uso palabras: {exc}", flush=True)
-        notes = search_notes(user_text)
+    notes = await hybrid_search(user_text)
 
     # Las reglas ya van en su propia seccion - no duplicarlas si tambien
-    # salieron en la busqueda semantica.
+    # salieron en la busqueda hibrida.
     rule_ids = {r.id for r in rules}
     notes = [n for n in notes if n.id not in rule_ids]
 
