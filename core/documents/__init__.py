@@ -16,6 +16,7 @@ from core.documents.extractors import (
     extract_csv,
     extract_docx,
     extract_html,
+    extract_image,
     extract_pdf,
     extract_pptx,
     extract_xlsx,
@@ -30,6 +31,11 @@ EXTRACTORS = {
     ".pptx": extract_pptx,
     ".html": extract_html,
     ".htm": extract_html,
+    ".png": extract_image,
+    ".jpg": extract_image,
+    ".jpeg": extract_image,
+    ".bmp": extract_image,
+    ".tiff": extract_image,
 }
 
 

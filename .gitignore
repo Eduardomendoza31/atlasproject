@@ -10,3 +10,4 @@ memory/atlas.db
 atlas_stdout.log
 atlas_stderr.log
 .claude/
+core/documents/tessdata/*.traineddata

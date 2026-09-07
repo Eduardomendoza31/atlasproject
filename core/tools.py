@@ -227,9 +227,10 @@ register(Tool(
     name="read_file",
     description=(
         "Lee el contenido de un archivo del computador del usuario: texto "
-        "plano, o documentos reales (PDF, Word .docx, Excel .xlsx, CSV, "
-        "PowerPoint .pptx, HTML) - de estos últimos extrae el texto real. "
-        "No puede leer PDFs escaneados (solo imágenes, sin texto) todavía."
+        "plano, documentos reales (PDF, Word .docx, Excel .xlsx, CSV, "
+        "PowerPoint .pptx, HTML), o imágenes (PNG/JPG/BMP/TIFF) - de estos "
+        "últimos extrae el texto real, incluyendo PDFs escaneados y fotos "
+        "de documentos via OCR."
     ),
     parameters={
         "type": "object",
