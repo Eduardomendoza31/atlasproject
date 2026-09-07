@@ -1,10 +1,9 @@
+import json
 import re
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
 
-VAULT_DIR = Path(__file__).resolve().parent / "vault"
-VAULT_DIR.mkdir(exist_ok=True)
+from memory.db import DEFAULT_TENANT_ID, DEFAULT_USER_ID, connect
 
 LINK_PATTERN = re.compile(r"\[\[([^\]]+)\]\]")
 WORD_PATTERN = re.compile(r"[a-záéíóúñü0-9]+")
@@ -17,77 +16,74 @@ STOPWORDS = {
 
 @dataclass
 class Note:
-    path: Path
+    id: int
+    user_id: str
+    tenant_id: str
     title: str
-    created: str
-    tags: list[str]
     content: str
+    tags: list[str]
+    created_at: str
+    updated_at: str
+    # Con que modelo se calculo el ultimo vector guardado para esta nota
+    # (None si todavia no se embebio nunca) - lo usa memory/semantic.py
+    # para saber que notas hay que (re)embeber sin una consulta aparte.
+    embedding_model: str | None = None
 
     @property
     def links(self) -> list[str]:
         return LINK_PATTERN.findall(self.content)
 
 
-def _slugify(text: str) -> str:
-    text = text.lower().strip()
-    text = re.sub(r"[^a-z0-9áéíóúñü\s-]", "", text)
-    text = re.sub(r"[\s_-]+", "-", text).strip("-")
-    return text[:60] or "nota"
-
-
-def save_note(title: str, content: str, tags: list[str] | None = None) -> Path:
-    """Guarda una nota nueva en el vault y devuelve su ruta."""
-    tags = tags or []
-    now = datetime.now()
-    filename = f"{now.strftime('%Y-%m-%d')}_{_slugify(title)}.md"
-    path = VAULT_DIR / filename
-    counter = 2
-    while path.exists():
-        path = VAULT_DIR / f"{now.strftime('%Y-%m-%d')}_{_slugify(title)}-{counter}.md"
-        counter += 1
-
-    frontmatter = (
-        "---\n"
-        f"created: {now.isoformat(timespec='seconds')}\n"
-        f"tags: [{', '.join(tags)}]\n"
-        "---\n\n"
+def _row_to_note(row) -> Note:
+    return Note(
+        id=row["id"],
+        user_id=row["user_id"],
+        tenant_id=row["tenant_id"],
+        title=row["title"],
+        content=row["content"],
+        tags=json.loads(row["tags"]),
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        embedding_model=row["embedding_model"],
     )
-    path.write_text(f"{frontmatter}# {title}\n\n{content}\n", encoding="utf-8")
-    return path
 
 
-def _parse_note(path: Path) -> Note:
-    raw = path.read_text(encoding="utf-8")
-    created = ""
-    tags: list[str] = []
-    body = raw
+def save_note(title: str, content: str, tags: list[str] | None = None) -> Note:
+    """Guarda una nota nueva y la devuelve ya con su id asignado."""
+    now = datetime.now().isoformat(timespec="seconds")
+    with connect() as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO notes (user_id, tenant_id, title, content, tags, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (DEFAULT_USER_ID, DEFAULT_TENANT_ID, title, content, json.dumps(tags or []), now, now),
+        )
+        note_id = cur.lastrowid
+    return Note(
+        id=note_id, user_id=DEFAULT_USER_ID, tenant_id=DEFAULT_TENANT_ID,
+        title=title, content=content, tags=tags or [], created_at=now, updated_at=now,
+    )
 
-    if raw.startswith("---"):
-        end = raw.find("---", 3)
-        if end != -1:
-            frontmatter = raw[3:end]
-            body = raw[end + 3:].strip()
-            for line in frontmatter.splitlines():
-                if line.startswith("created:"):
-                    created = line.split(":", 1)[1].strip()
-                elif line.startswith("tags:"):
-                    raw_tags = line.split(":", 1)[1].strip().strip("[]")
-                    tags = [t.strip() for t in raw_tags.split(",") if t.strip()]
 
-    title = path.stem
-    if body.startswith("#"):
-        first_line, _, rest = body.partition("\n")
-        title = first_line.lstrip("#").strip()
-        body = rest.strip()
-
-    return Note(path=path, title=title, created=created, tags=tags, content=body)
+def mark_embedded(note_id: int, model: str) -> None:
+    """Registra con que modelo se acaba de calcular el vector de una nota -
+    lo llama memory/semantic.py despues de guardar el vector en notes_vec."""
+    with connect() as conn:
+        conn.execute("UPDATE notes SET embedding_model = ? WHERE id = ?", (model, note_id))
 
 
 def list_notes() -> list[Note]:
-    return [_parse_note(p) for p in sorted(VAULT_DIR.glob("*.md"))]
+    with connect() as conn:
+        rows = conn.execute("SELECT * FROM notes ORDER BY created_at ASC").fetchall()
+    return [_row_to_note(r) for r in rows]
 
 
 def list_notes_by_tag(tag: str) -> list[Note]:
+    # El filtro por tag se hace en Python, no en SQL (json_each seria mas
+    # "correcto" pero el vault de un solo usuario tiene decenas de notas,
+    # no miles - no vale la pena la complejidad de una consulta JSON para
+    # esta escala).
     return [n for n in list_notes() if tag in n.tags]
 
 
@@ -107,9 +103,8 @@ def _tokenize(text: str) -> set[str]:
 
 
 def search_notes(query: str, limit: int = 3) -> list[Note]:
-    """Busqueda simple por coincidencia de palabras. Suficiente para el
-    tamano de vault de un solo usuario; se puede cambiar por busqueda
-    vectorial mas adelante sin tocar el resto del sistema."""
+    """Busqueda simple por coincidencia de palabras. Sirve de respaldo
+    cuando la busqueda semantica (memory/semantic.py) no esta disponible."""
     query_words = _tokenize(query)
     if not query_words:
         return []

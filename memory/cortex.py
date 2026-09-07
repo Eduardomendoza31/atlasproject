@@ -54,8 +54,8 @@ async def relevant_context(user_text: str) -> str:
 
     # Las reglas ya van en su propia seccion - no duplicarlas si tambien
     # salieron en la busqueda semantica.
-    rule_paths = {r.path for r in rules}
-    notes = [n for n in notes if n.path not in rule_paths]
+    rule_ids = {r.id for r in rules}
+    notes = [n for n in notes if n.id not in rule_ids]
 
     blocks = []
     if rules:
