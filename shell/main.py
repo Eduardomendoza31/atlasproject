@@ -1,5 +1,6 @@
 import multiprocessing
 import os
+import socket
 import sys
 import threading
 from pathlib import Path
@@ -47,7 +48,44 @@ def run_server():
     uvicorn.run(fastapi_app, host=HOST, port=PORT, log_level="warning")
 
 
+def _atlas_ya_esta_corriendo() -> bool:
+    """True si algo ya esta escuchando en el puerto de Atlas - evita abrir
+    una segunda instancia completa (segundo servidor, segunda ventana)
+    encima de una que ya esta andando.
+
+    Se encontro este bug de verdad: los archivos .py en esta maquina se
+    abren por defecto con el lanzador de Python del sistema (py.exe, via
+    el registro de Windows), no con el de este proyecto - si Windows llega
+    a abrir shell/main.py directamente por cualquier via distinta al
+    acceso directo correcto (shell/launch_hidden.vbs, que si usa
+    .venv/Scripts/python.exe), se dispara una segunda instancia con OTRO
+    interprete, compitiendo por el mismo puerto y la misma clave de API de
+    Gemini al mismo tiempo - eso se manifesto como demoras larguisimas y
+    "Fallo al hablar con el modelo" (dos instancias agotando la misma
+    cuota/limite de la capa gratuita en simultaneo)."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(0.5)
+        try:
+            s.connect((HOST, PORT))
+            return True
+        except OSError:
+            return False
+
+
 def main():
+    if _atlas_ya_esta_corriendo():
+        print("Atlas ya esta abierto - no se abre una segunda instancia.", flush=True)
+        if sys.platform == "win32":
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(
+                0,
+                "Atlas ya está abierto. Buscá la ventana existente (puede "
+                "estar minimizada o detrás de otra ventana).",
+                "Atlas",
+                0x40,  # MB_ICONINFORMATION
+            )
+        return
+
     if sys.platform == "win32":
         # Sin esto, Windows agrupa la ventana bajo el icono generico de
         # python.exe en la barra de tareas en vez del icono propio de la
