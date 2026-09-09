@@ -224,6 +224,23 @@ function addMessage(text, who) {
   return div;
 }
 
+// Usado por el resultado de generate_image (ver core/tools.py::IMAGE_MARKER
+// y skills/image_generation.py) - cualquier tool_result que venga con
+// image_url se muestra como una imagen real en el chat, no solo como texto.
+function addImageMessage(text, imageUrl, who) {
+  const div = document.createElement("div");
+  div.className = `msg ${who}`;
+  if (text) div.appendChild(document.createTextNode(text));
+  const img = document.createElement("img");
+  img.className = "msg-image";
+  img.src = imageUrl;
+  img.alt = "Imagen generada por Atlas";
+  div.appendChild(img);
+  chatEl.appendChild(div);
+  chatEl.scrollTop = chatEl.scrollHeight;
+  return div;
+}
+
 function clearTyping() {
   if (typingBubble) {
     typingBubble.remove();
@@ -439,7 +456,12 @@ function connect() {
       // nada nuevo en pantalla.
       if (data.name !== "announce_plan" && data.name !== "report_outcome") {
         const label = data.denied ? "denegado" : "resultado";
-        addMessage(`${data.name} — ${label}: ${data.result}`, "atlas tool-result");
+        const text = `${data.name} — ${label}: ${data.result}`;
+        if (data.image_url) {
+          addImageMessage(text, data.image_url, "atlas tool-result");
+        } else {
+          addMessage(text, "atlas tool-result");
+        }
       }
       emitTool({
         phase: "result",

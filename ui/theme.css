@@ -1095,6 +1095,13 @@ body[data-atlas-state="escuchando"] .card-rail {
   background: rgba(255, 255, 255, 0.03);
 }
 
+.msg-image {
+  display: block;
+  max-width: 100%;
+  margin-top: 6px;
+  border-radius: 10px;
+}
+
 .msg.confirm {
   box-shadow: 0 0 0 1.5px var(--panel-border-strong);
 }

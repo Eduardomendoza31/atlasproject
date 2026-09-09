@@ -13,7 +13,7 @@ from typing import Awaitable, Callable
 
 from core.providers import stream_agent_turn, try_local_first
 from core.subagents import get_subagent
-from core.tools import Tool, all_tool_schemas, get_tool
+from core.tools import IMAGE_MARKER, Tool, all_tool_schemas, get_tool
 
 MAX_TOOL_ROUNDTRIPS = 10
 
@@ -21,6 +21,19 @@ DELEGATE_TOOL_NAME = "delegate_to_agent"
 
 # (tool_call_id, tool, arguments) -> aprobado?
 ConfirmCallback = Callable[[str, Tool, dict], Awaitable[bool]]
+
+
+def _split_image_marker(result: str) -> tuple[str, str | None]:
+    """Separa la URL de una imagen (si la hay, ver core/tools.py::IMAGE_MARKER)
+    del texto del resultado - ni el modelo ni la burbuja de texto del chat
+    deben ver la URL cruda (Atlas es un asistente de voz, no tiene sentido
+    que la lea en voz alta), asi que se saca de `result` antes de que se
+    guarde en `messages` o se muestre, y se manda aparte como campo propio
+    del evento."""
+    index = result.find(IMAGE_MARKER)
+    if index == -1:
+        return result, None
+    return result[:index], result[index + len(IMAGE_MARKER):].strip()
 
 
 async def run_agent_turn(
@@ -142,6 +155,8 @@ async def run_agent_turn(
                 result = await tool.executor(tc["arguments"])
                 denied = False
 
+            result, image_url = _split_image_marker(result)
+
             messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
             yield {
                 "type": "tool_result",
@@ -149,6 +164,7 @@ async def run_agent_turn(
                 "name": tc["name"],
                 "result": result,
                 "denied": denied,
+                "image_url": image_url,
             }
 
     # Se agoto el limite de idas-y-vueltas: se le pide al modelo una

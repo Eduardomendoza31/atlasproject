@@ -32,6 +32,14 @@ RUN_COMMAND_MODEL_OUTPUT_CAP = 20_000
 RUN_COMMAND_UI_OUTPUT_CAP = 4_000
 WEB_SEARCH_MAX_RESULTS = 5
 
+# Cualquier herramienta puede sumar una imagen para mostrar en el chat
+# terminando su resultado con este marcador seguido de la URL (ver
+# skills/image_generation.py) - core/agent.py lo separa antes de que
+# llegue al modelo o a la pantalla como texto, y lo manda aparte como
+# campo propio del evento tool_result (ver ui/chat.js). Ningun otro string
+# de Atlas debería contener esta secuencia por accidente.
+IMAGE_MARKER = "\n||IMAGEN_URL||"
+
 
 @dataclass
 class Tool:
