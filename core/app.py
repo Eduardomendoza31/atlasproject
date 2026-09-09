@@ -4,11 +4,10 @@ from datetime import date, datetime
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 
 from core.agent import run_agent_turn
 from core.automations import list_automations, scheduler_loop
-from core.config import GENERATED_IMAGES_DIR, USER_NAME
+from core.config import USER_NAME
 from core.projects import (
     append_message as append_project_message,
     find_project_by_name,
@@ -43,14 +42,6 @@ app.add_middleware(
 # porque las herramientas de cada skill tienen que estar registradas
 # ANTES de que el primer turno pida el esquema de herramientas.
 load_skills()
-
-# Sirve las imagenes que genera skills/image_generation.py para que la UI
-# (que corre en su propio origen file://) las pueda cargar con un <img
-# src="http://127.0.0.1:8731/generated-images/...">. La carpeta puede no
-# existir todavia si nunca se genero una imagen - se crea vacia para que
-# el mount no falle al arrancar Atlas por primera vez.
-GENERATED_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
-app.mount("/generated-images", StaticFiles(directory=GENERATED_IMAGES_DIR), name="generated-images")
 
 background_tasks: set[asyncio.Task] = set()
 

@@ -18,6 +18,7 @@ efectiva que de verdad funciona en la maquina real, no la mas "local" a
 cualquier costo de velocidad."""
 
 import asyncio
+import base64
 import re
 from datetime import datetime
 from pathlib import Path
@@ -106,17 +107,16 @@ async def _exec_generate_image(arguments: dict) -> str:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(image_bytes)
 
-    # La URL apunta al mismo puerto que ya usa el resto de Atlas
-    # (core/app.py monta GENERATED_IMAGES_DIR en /generated-images) - si el
-    # usuario pidio guardarla en otro lado (`raw_path`), la imagen igual se
-    # guarda ahi, pero solo se puede MOSTRAR en el chat si ese destino cae
-    # dentro de esa carpeta (fuera de ahi, FastAPI no la sirve).
-    try:
-        relative = path.resolve().relative_to(GENERATED_IMAGES_DIR.resolve())
-        image_url = f"http://127.0.0.1:8731/generated-images/{quote(str(relative).replace(chr(92), '/'))}"
-        marker = f"{IMAGE_MARKER}{image_url}"
-    except ValueError:
-        marker = ""
+    # La imagen va embebida en base64 (igual que ya hace core/app.py con el
+    # audio de las respuestas habladas), no como una URL http a
+    # /generated-images - se probo eso primero y Chromium la bloqueaba con
+    # net::ERR_NETWORK_ACCESS_DENIED: la UI de Atlas es una pagina file://,
+    # y su politica de "Private Network Access" no deja que una pagina asi
+    # cargue un <img> desde 127.0.0.1 aunque el fetch() normal si funcione
+    # (ver ATLAS_MIGRATION_PLAN.md o la memoria de la sesion para el detalle).
+    # Yendo embebido, no hay ninguna carga de red de por medio para la UI.
+    data_url = f"data:image/jpeg;base64,{base64.b64encode(image_bytes).decode('ascii')}"
+    marker = f"{IMAGE_MARKER}{data_url}"
 
     return (
         f"Imagen generada a partir de: \"{prompt}\". Se guardó en '{path}'."
@@ -130,12 +130,16 @@ def register() -> None:
         description=(
             "Genera una imagen real a partir de una descripción de texto "
             "(usando el modelo Flux) y la muestra en el chat. Escribe el "
-            "argumento 'prompt' en inglés y de forma descriptiva (estilo, "
-            "colores, composición, iluminación) para la mejor calidad, "
-            "aunque el usuario haya pedido la imagen en español - vos "
-            "traducís y enriquecés la descripción, el usuario no tiene que "
-            "hacerlo. Úsalo cuando el usuario pida crear, generar o "
-            "dibujar una imagen, ilustración, foto o diseño."
+            "argumento 'prompt' en inglés, traduciendo FIELMENTE lo que "
+            "pidió el usuario - manteniendo cada elemento, personaje, "
+            "cantidad y relación espacial que mencionó, sin agregar cosas "
+            "que no pidió. Podés sumar detalles que mejoran la calidad sin "
+            "cambiar el contenido (iluminación, estilo, composición, "
+            "nitidez), pero si el usuario pidió algo simple y específico, "
+            "el prompt debe seguir siendo simple y específico - un prompt "
+            "recargado de adjetivos hace que el modelo se aleje de lo "
+            "pedido. Úsalo cuando el usuario pida crear, generar o dibujar "
+            "una imagen, ilustración, foto o diseño."
         ),
         parameters={
             "type": "object",
