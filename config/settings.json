@@ -2,7 +2,11 @@
   "roles": {
     "conversational": {
       "provider": "google",
-      "model": "gemini/gemini-3.5-flash-lite"
+      "model": "gemini/gemini-3.5-flash-lite",
+      "local_first": {
+        "enabled": false,
+        "model": "ollama_chat/llama3.2"
+      }
     },
     "memory_cortex": {
       "provider": "google",

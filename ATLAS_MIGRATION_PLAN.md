@@ -11,7 +11,10 @@
 > unificada en SQLite + `sqlite-vec`) hecha. Fase 6 (RAG local) hecha en dos
 > pasos: primero la búsqueda híbrida sobre notas, después la base de
 > conocimiento documental (`memory/documents.py`, `skills/knowledge.py`) con
-> cita de fuente. Siguiente fase abierta: Fase 7.
+> cita de fuente. Fase 7 (modo híbrido local/Gemini) construida y verificada
+> en vivo, pero **desactivada por defecto** (`local_first.enabled: false` en
+> `config/settings.json`) por un hallazgo real de latencia — ver la sección
+> de la Fase 7 más abajo antes de activarla. Siguiente fase abierta: Fase 8.
 
 Principio que atraviesa todas las fases: **cada una debe dejar Atlas
 funcionando de punta a punta**, nunca a medio romper. Ninguna fase depende de
@@ -156,6 +159,32 @@ después, nunca al revés.
 - **Dificultad:** alta.
 - **Beneficio:** es el paso que más reduce la dependencia real de Gemini.
 - **Rollback:** volver `conversational` a apuntar a Gemini en `settings.json`.
+
+**Estado (2026-09-08): construida y verificada en vivo, desactivada por
+defecto.** `core/providers/__init__.py::try_local_first` intenta el modelo
+de `roles.conversational.local_first.model` ANTES del proveedor normal,
+pero solo en el turno principal (no en agentes delegados) y solo se acepta
+la respuesta si el modelo local NO pidió ninguna herramienta — si pide una,
+o falla por cualquier motivo (incluido Ollama caído), se descarta el
+intento entero (sin streaming parcial hacia el usuario) y el turno se
+resuelve como siempre, con Gemini. Probado con `llama3.2:3b` (ya estaba
+pulido, no se pidió pulir nada nuevo): un turno simple lo contestó el local
+solo; un turno con herramienta se descartó del intento local y lo resolvió
+Gemini con la herramienta real; un modelo local inexistente/Ollama caído
+también cae a Gemini sin romper el turno.
+
+**Por qué queda apagado por defecto (`local_first.enabled: false`):**
+latencia real medida en esta máquina (i3, sin GPU) de **4.6 a 39.5 segundos
+por respuesta simple** — mucho más lento que Gemini en el caso normal. Y en
+el caso donde el modelo local termina pidiendo una herramienta, esa
+latencia se suma ENTERA a la del turno real con Gemini después (se paga el
+intento local completo antes de darse cuenta de que hacía falta descartar).
+También hubo un desliz de calidad real en un resumen simple ("un escrutio
+en el presupuesto", palabra sin sentido) — la misma clase de debilidad de
+modelos chicos que ya se había visto en la Fase 4. La muestra de prueba fue
+chica (5 conversacionales + 2 con herramienta), así que esto no es
+concluyente en ningún sentido — es la razón concreta para no imponer el
+cambio por defecto y dejarlo en manos de Eduardo activarlo cuando quiera.
 
 ### Fase 8 — Memoria (unificación de tipos)
 - **Objetivo:** implementar los 5 tipos de memoria de la visión de forma

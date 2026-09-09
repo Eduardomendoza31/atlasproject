@@ -11,7 +11,7 @@ import json
 from collections.abc import AsyncIterator
 from typing import Awaitable, Callable
 
-from core.providers import stream_agent_turn
+from core.providers import stream_agent_turn, try_local_first
 from core.subagents import get_subagent
 from core.tools import Tool, all_tool_schemas, get_tool
 
@@ -38,6 +38,14 @@ async def run_agent_turn(
     turno - lo usan los agentes especializados (ver core/subagents.py)
     para ver solo las de su dominio. None (el turno principal) ve todas.
 
+    Si el rol tiene el modo hibrido activado (Fase 7 del plan de
+    migracion, ver core/providers/__init__.py::try_local_first), primero
+    se intenta responder con un modelo local antes de gastar una llamada
+    al proveedor normal - pero SOLO en el turno principal
+    (`allowed_tools is None`): un agente especializado delegado necesita
+    su tool-use confiable, y la calidad de tool-use de un modelo local
+    chico todavia no esta probada lo suficiente para eso.
+
     Emite:
       {"type": "text", "text": str}
       {"type": "tool_call", "id", "name", "arguments"}
@@ -56,6 +64,14 @@ async def run_agent_turn(
     pueda mostrar la delegacion con claridad."""
     tools_schema = all_tool_schemas(allowed_tools)
     full_text_this_turn = ""
+
+    if allowed_tools is None:
+        local_text = await try_local_first(role, messages, tools_schema)
+        if local_text is not None:
+            messages.append({"role": "assistant", "content": local_text})
+            yield {"type": "text", "text": local_text}
+            yield {"type": "turn_done", "final_text": local_text}
+            return
 
     for _ in range(MAX_TOOL_ROUNDTRIPS):
         pending_tool_calls: list[dict] = []
