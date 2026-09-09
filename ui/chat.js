@@ -18,6 +18,23 @@ let ws = null;
 let atlasBubble = null;
 let typingBubble = null;
 
+// Voz activa actualmente (respuesta normal o pregunta de confirmacion) -
+// si llega un audio nuevo mientras este todavia esta sonando (por ejemplo,
+// una confirmacion que interrumpe la respuesta anterior), se corta el
+// viejo antes de arrancar el nuevo. Sin esto, cada audio es un elemento
+// <Audio> independiente sin relacion entre si (ver ui/face.js::
+// playWithLipSync, que no se toca aca - es logica de lip-sync protegida,
+// no de reproduccion) y dos pueden terminar sonando pisados uno con otro.
+let currentSpokenAudio = null;
+
+function speak(audio) {
+  if (currentSpokenAudio && !currentSpokenAudio.ended) {
+    currentSpokenAudio.pause();
+  }
+  currentSpokenAudio = audio;
+  playWithLipSync(audio);
+}
+
 // --- Silenciar la voz ---
 // El backend siempre manda audio_reply (aca no se cambia eso, la
 // respuesta en texto sigue llegando igual) - "silenciar" solo decide
@@ -400,7 +417,7 @@ function connect() {
           // altavoz/eco del final de la frase se cuela en la grabacion.
           setTimeout(maybeResumeListening, 400);
         });
-        playWithLipSync(audio);
+        speak(audio);
       }
     } else if (data.type === "tool_call") {
       clearTyping();
@@ -448,7 +465,7 @@ function connect() {
         setAtlasState("autorizacion");
         if (pendingConfirmWasVoice) listenForConfirmAnswer();
       });
-      playWithLipSync(confirmAudio);
+      speak(confirmAudio);
     } else if (data.type === "tool_result") {
       // announce_plan/report_outcome ya mostraron su propio mensaje al
       // llegar como tool_call (con los datos reales del plan/resultado) -

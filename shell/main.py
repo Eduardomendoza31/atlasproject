@@ -13,7 +13,7 @@ os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 import uvicorn
 from PyQt6.QtCore import QUrl
 from PyQt6.QtGui import QIcon
-from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEnginePermission
+from PyQt6.QtWebEngineCore import QWebEngineProfile, QWebEnginePage, QWebEnginePermission
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import QApplication
 
@@ -103,6 +103,16 @@ def main():
     app = QApplication(sys.argv)
     icon = QIcon(str(ROOT / "img" / "atlas_icon.ico"))
     app.setWindowIcon(icon)  # necesario ademas del de la ventana para que la barra de tareas de Windows lo muestre
+
+    # Sin esto, Chromium (el motor detras de QWebEngineView) puede servir
+    # una copia en cache de ui/*.js en vez del archivo real en disco -
+    # Atlas carga su UI desde file://, y el cache persiste entre una
+    # apertura y la siguiente. Para una app que se edita seguido (como
+    # esta) eso significa abrir Atlas y seguir viendo la version vieja de
+    # la interfaz aunque el archivo ya haya cambiado. No hay ningun
+    # beneficio real en cachear una pagina que ya vive en el disco local.
+    QWebEngineProfile.defaultProfile().setHttpCacheType(QWebEngineProfile.HttpCacheType.NoCache)
+
     window = QWebEngineView()
     page = DebugPage(window)
     page.permissionRequested.connect(_handle_permission_request)
