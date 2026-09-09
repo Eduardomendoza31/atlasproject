@@ -1,8 +1,14 @@
 from core.providers import complete
-from memory.search import hybrid_search
+from memory.search import hybrid_search, hybrid_search_documents
 from memory.store import list_notes_by_tag, save_note
 
 RULE_TAG = "regla"
+
+# Cuantos fragmentos de documentos se inyectan solos en cada turno. Son pocos
+# a proposito: cada fragmento son ~1200 caracteres que entran en el prompt de
+# TODOS los turnos, y el modelo siempre puede pedir mas con la herramienta
+# search_knowledge (skills/knowledge.py) si le hace falta.
+DOC_CONTEXT_LIMIT = 2
 
 SAVE_DECISION_PROMPT = """Estas leyendo un turno de una conversacion entre un
 usuario y Atlas, su asistente personal.
@@ -43,9 +49,18 @@ async def relevant_context(user_text: str) -> str:
     van a Documentacion" debe aplicar aunque el usuario no diga "PDF"),
     mas las notas relacionadas con lo que acaba de decir segun busqueda
     hibrida (significado + palabras clave combinados, ver
-    memory/search.py) - no una sola de las dos como antes."""
+    memory/search.py) - no una sola de las dos como antes -, mas los
+    fragmentos de los documentos indexados que hablen de lo mismo (Fase 6:
+    la base de conocimiento, ver memory/documents.py).
+
+    Los tres bloques van por separado y etiquetados porque no valen lo
+    mismo: una regla es una orden, una nota es algo que Atlas creyo
+    entender de una conversacion, y un fragmento es texto textual de un
+    documento del usuario - lo unico de los tres que se puede citar como
+    fuente."""
     rules = list_notes_by_tag(RULE_TAG)
     notes = await hybrid_search(user_text)
+    chunks = await hybrid_search_documents(user_text, limit=DOC_CONTEXT_LIMIT)
 
     # Las reglas ya van en su propia seccion - no duplicarlas si tambien
     # salieron en la busqueda hibrida.
@@ -62,6 +77,15 @@ async def relevant_context(user_text: str) -> str:
     if notes:
         note_lines = [f"- {n.title}: {n.content}" for n in notes]
         blocks.append("Memoria relevante de conversaciones pasadas:\n" + "\n".join(note_lines))
+    if chunks:
+        chunk_lines = [f"[{c.source}]\n{c.content}" for c in chunks]
+        blocks.append(
+            "Fragmentos textuales de documentos que el usuario indexó, por si "
+            "sirven para responder. Si usas alguno, cita la fuente que va entre "
+            'corchetes (por ejemplo: "según informe.pdf, página 3..."). Si no '
+            "tienen que ver con lo que se está hablando, ignóralos y no los "
+            "menciones:\n\n" + "\n\n".join(chunk_lines)
+        )
 
     return "\n\n".join(blocks)
 

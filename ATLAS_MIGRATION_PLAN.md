@@ -1,8 +1,17 @@
 # ATLAS — Plan de Migración
 
-> Ninguna de estas fases se ha ejecutado. Este documento describe el plan
-> propuesto para revisión, no trabajo ya hecho. Ver `ATLAS_TECHNOLOGY_DECISIONS.md`
-> para la justificación técnica de cada elección referenciada aquí.
+> Ver `ATLAS_TECHNOLOGY_DECISIONS.md` para la justificación técnica de cada
+> elección referenciada aquí.
+>
+> **Estado de ejecución (al 2026-09-08):** Fase 1 (auditoría) hecha. Fase 2
+> (capa `AIProvider`) hecha. Fase 3 (lectura de documentos, incluido OCR)
+> hecha. Fase 4 (embeddings locales) evaluada y **descartada por ahora**: la
+> infraestructura quedó lista pero el modelo local no dio la calidad
+> necesaria, así que los embeddings siguen en Gemini. Fase 5 (memoria
+> unificada en SQLite + `sqlite-vec`) hecha. Fase 6 (RAG local) hecha en dos
+> pasos: primero la búsqueda híbrida sobre notas, después la base de
+> conocimiento documental (`memory/documents.py`, `skills/knowledge.py`) con
+> cita de fuente. Siguiente fase abierta: Fase 7.
 
 Principio que atraviesa todas las fases: **cada una debe dejar Atlas
 funcionando de punta a punta**, nunca a medio romper. Ninguna fase depende de

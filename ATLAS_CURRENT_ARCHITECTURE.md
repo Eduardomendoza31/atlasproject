@@ -3,6 +3,12 @@
 > Generado por auditoría de código el 2026-09-07. Refleja el repositorio en su
 > estado real (commit `5ff45f7`), no el plan ni la visión. No se modificó
 > ningún archivo de código para producir este documento.
+>
+> **Es una foto de ese día, no se actualiza con cada cambio.** Desde entonces
+> se ejecutaron las Fases 2 a 6 del plan de migración, así que las secciones
+> que dicen que no existe una capa `AIProvider`, que no hay ingesta ni
+> chunking de documentos, y que no hay búsqueda sobre documentos, ya no son
+> ciertas — ver `ATLAS_MIGRATION_PLAN.md` para el estado real.
 
 ## 1. Qué es Atlas hoy
 

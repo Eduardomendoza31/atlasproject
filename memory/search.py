@@ -14,7 +14,8 @@ RRF no le importa el valor del puntaje, solo en que POSICION quedo cada
 nota en cada lista - sigue siendo valido sin importar que proveedor de
 embeddings este activo, incluso si el dia de mañana cambia."""
 
-from memory.semantic import semantic_search
+from memory.documents import Chunk, search_chunks
+from memory.semantic import semantic_search, semantic_search_chunks
 from memory.store import Note, search_notes
 
 # Constante estandar de Reciprocal Rank Fusion (asi se usa practicamente
@@ -28,7 +29,23 @@ RRF_K = 60
 CANDIDATE_POOL = 10
 
 
+def _fuse(ranked_lists: list[list], limit: int) -> list:
+    """Reciprocal Rank Fusion sobre listas ya ordenadas de items con `.id`.
+    Sirve igual para notas y para fragmentos de documentos: RRF solo mira la
+    POSICION de cada item en cada lista, nunca su contenido ni su puntaje."""
+    scores: dict[int, float] = {}
+    items_by_id: dict[int, object] = {}
+    for ranked_list in ranked_lists:
+        for rank, item in enumerate(ranked_list, start=1):
+            scores[item.id] = scores.get(item.id, 0.0) + 1 / (RRF_K + rank)
+            items_by_id[item.id] = item
+
+    ranked_ids = sorted(scores, key=lambda item_id: scores[item_id], reverse=True)
+    return [items_by_id[item_id] for item_id in ranked_ids[:limit]]
+
+
 async def hybrid_search(query: str, limit: int = 3) -> list[Note]:
+    """Notas de memoria (lo que Atlas aprendio conversando)."""
     try:
         semantic_results = await semantic_search(query, limit=CANDIDATE_POOL)
     except Exception as exc:
@@ -36,13 +53,17 @@ async def hybrid_search(query: str, limit: int = 3) -> list[Note]:
         semantic_results = []
 
     keyword_results = search_notes(query, limit=CANDIDATE_POOL)
+    return _fuse([semantic_results, keyword_results], limit)
 
-    scores: dict[int, float] = {}
-    notes_by_id: dict[int, Note] = {}
-    for ranked_list in (semantic_results, keyword_results):
-        for rank, note in enumerate(ranked_list, start=1):
-            scores[note.id] = scores.get(note.id, 0.0) + 1 / (RRF_K + rank)
-            notes_by_id[note.id] = note
 
-    ranked_ids = sorted(scores, key=lambda note_id: scores[note_id], reverse=True)
-    return [notes_by_id[note_id] for note_id in ranked_ids[:limit]]
+async def hybrid_search_documents(query: str, limit: int = 3) -> list[Chunk]:
+    """Fragmentos de los documentos indexados (la base de conocimiento de la
+    Fase 6). Misma fusion que para notas, otra fuente."""
+    try:
+        semantic_results = await semantic_search_chunks(query, limit=CANDIDATE_POOL)
+    except Exception as exc:
+        print(f"[Búsqueda] Falló la búsqueda semántica en documentos, sigo solo con palabras clave: {exc}", flush=True)
+        semantic_results = []
+
+    keyword_results = search_chunks(query, limit=CANDIDATE_POOL)
+    return _fuse([semantic_results, keyword_results], limit)

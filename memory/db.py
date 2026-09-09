@@ -13,6 +13,21 @@ real para compartir codigo mas alla del archivo fisico. Lo que si se
 comparte, como pide la auditoria ("una sola base para todo"), es JUSTAMENTE
 eso: un unico archivo .db, no cinco almacenes distintos.
 
+La Fase 6 sumo a este mismo archivo la base de conocimiento documental
+(`documents` + `chunks` + `chunks_vec`): un documento indexado se parte en
+fragmentos y cada fragmento guarda de que parte del archivo salio (pagina,
+hoja, diapositiva) para poder citar la fuente al responder. Va aca y no en
+una base aparte por la misma razon que las notas: la auditoria pide una
+sola base para todo.
+
+Los fragmentos NO tienen FOREIGN KEY declarada contra `documents`: SQLite
+no las verifica salvo que cada conexion active `PRAGMA foreign_keys=ON`
+(por compatibilidad hacia atras viene apagado por defecto), asi que una FK
+declarada aca daria una falsa sensacion de integridad. El borrado en
+cascada se hace explicito en memory/documents.py, que ademas tiene que
+borrar a mano los vectores de `chunks_vec` (una tabla virtual vec0 no
+participa de ninguna cascada de SQLite aunque estuviera activada).
+
 `user_id`/`tenant_id` estan en el esquema desde el dia uno con un valor
 fijo ("local") aunque hoy nadie los use para filtrar nada - el objetivo es
 que una migracion futura a multiusuario (Fase 12-13) sea llenar esas
@@ -70,11 +85,37 @@ def init_db() -> None:
                 embedding_model TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_notes_user ON notes(user_id, tenant_id);
+
+            CREATE TABLE IF NOT EXISTS documents (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL DEFAULT 'local',
+                tenant_id TEXT NOT NULL DEFAULT 'local',
+                path TEXT NOT NULL UNIQUE,
+                title TEXT NOT NULL,
+                size_bytes INTEGER NOT NULL,
+                mtime TEXT NOT NULL,
+                indexed_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_documents_user ON documents(user_id, tenant_id);
+
+            CREATE TABLE IF NOT EXISTS chunks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                document_id INTEGER NOT NULL,
+                ordinal INTEGER NOT NULL,
+                location TEXT,
+                content TEXT NOT NULL,
+                embedding_model TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_chunks_document ON chunks(document_id);
             """
         )
         conn.execute(
             f"CREATE VIRTUAL TABLE IF NOT EXISTS notes_vec USING "
             f"vec0(note_id INTEGER PRIMARY KEY, embedding float[{EMBEDDING_DIM}] distance_metric=cosine)"
+        )
+        conn.execute(
+            f"CREATE VIRTUAL TABLE IF NOT EXISTS chunks_vec USING "
+            f"vec0(chunk_id INTEGER PRIMARY KEY, embedding float[{EMBEDDING_DIM}] distance_metric=cosine)"
         )
 
 
